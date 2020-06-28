@@ -13,6 +13,7 @@ import myNotebook as nb
 from config import applongname, config
 from l10n import Translations
 from monitor import monitor
+from theme import theme
 
 import plug
 
@@ -128,6 +129,44 @@ class PreferencesDialog(tk.Toplevel):
         nb.Frame(outframe).grid(pady=5)	# bottom spacer
 
         notebook.add(outframe, text=_('Output'))		# Tab heading in settings
+
+        # build theme settings
+
+        self.languages = Translations.available_names()
+        self.lang = tk.StringVar(value = self.languages.get(config.get('language'), _('Default')))	# Appearance theme and language setting
+        self.always_ontop = tk.BooleanVar(value = config.getint('always_ontop'))
+        self.theme = tk.IntVar(value = config.getint('theme'))
+        self.theme_colors = [config.get('dark_text'), config.get('dark_highlight')]
+        self.theme_prompts = [
+            _('Normal text'),		# Dark theme color setting
+            _('Highlighted text'),	# Dark theme color setting
+        ]
+
+        themeframe = nb.Frame(notebook)
+        themeframe.columnconfigure(2, weight=1)
+        nb.Label(themeframe, text=_('Language')).grid(row=10, padx=PADX, sticky=tk.W)	# Appearance setting prompt
+        self.lang_button = nb.OptionMenu(themeframe, self.lang, self.lang.get(), *self.languages.values())
+        self.lang_button.grid(row=10, column=1, columnspan=2, padx=PADX, sticky=tk.W)
+        ttk.Separator(themeframe, orient=tk.HORIZONTAL).grid(columnspan=3, padx=PADX, pady=PADY*4, sticky=tk.EW)
+        nb.Label(themeframe, text=_('Theme')).grid(columnspan=3, padx=PADX, sticky=tk.W)	# Appearance setting
+        nb.Radiobutton(themeframe, text=_('Default'), variable=self.theme, value=0, command=self.themevarchanged).grid(columnspan=3, padx=BUTTONX, sticky=tk.W)	# Appearance theme and language setting
+        nb.Radiobutton(themeframe, text=_('Dark'), variable=self.theme, value=1, command=self.themevarchanged).grid(columnspan=3, padx=BUTTONX, sticky=tk.W)	# Appearance theme setting
+        if platform == 'win32':
+            nb.Radiobutton(themeframe, text=_('Transparent'), variable=self.theme, value=2, command=self.themevarchanged).grid(columnspan=3, padx=BUTTONX, sticky=tk.W)	# Appearance theme setting
+        self.theme_label_0 = nb.Label(themeframe, text=self.theme_prompts[0])
+        self.theme_label_0.grid(row=20, padx=PADX, sticky=tk.W)
+        self.theme_button_0 = nb.ColoredButton(themeframe, text=_('Station'), background='grey4', command=lambda:self.themecolorbrowse(0))	# Main window
+        self.theme_button_0.grid(row=20, column=1, padx=PADX, pady=PADY, sticky=tk.NSEW)
+        self.theme_label_1 = nb.Label(themeframe, text=self.theme_prompts[1])
+        self.theme_label_1.grid(row=21, padx=PADX, sticky=tk.W)
+        self.theme_button_1 = nb.ColoredButton(themeframe, text='  Hutton Orbital  ', background='grey4', command=lambda:self.themecolorbrowse(1))	# Do not translate
+        self.theme_button_1.grid(row=21, column=1, padx=PADX, pady=PADY, sticky=tk.NSEW)
+        ttk.Separator(themeframe, orient=tk.HORIZONTAL).grid(columnspan=3, padx=PADX, pady=PADY*4, sticky=tk.EW)
+        self.ontop_button = nb.Checkbutton(themeframe, text=_('Always on top'), variable=self.always_ontop, command=self.themevarchanged)
+        self.ontop_button.grid(columnspan=3, padx=BUTTONX, sticky=tk.W)	# Appearance setting
+        nb.Label(themeframe).grid(sticky=tk.W)	# big spacer
+
+        notebook.add(themeframe, text=_('Appearance'))	# Tab heading in settings
 
         # build plugin prefs tabs
         for plugin in plug.PLUGINS:
@@ -302,6 +341,22 @@ class PreferencesDialog(tk.Toplevel):
             self.logdir.set(config.default_journal_dir)
         self.outvarchanged()
 
+    def themecolorbrowse(self, index):
+        (rgb, color) = tkColorChooser.askcolor(self.theme_colors[index], title=self.theme_prompts[index], parent=self.parent)
+        if color:
+            self.theme_colors[index] = color
+            self.themevarchanged()
+
+    def themevarchanged(self):
+        self.theme_button_0['foreground'], self.theme_button_1['foreground'] = self.theme_colors
+
+        state = self.theme.get() and tk.NORMAL or tk.DISABLED
+        self.theme_label_0['state'] = state
+        self.theme_label_1['state'] = state
+        self.theme_button_0['state'] = state
+        self.theme_button_1['state'] = state
+
+
     def apply(self):
         config.set('output',
                    (self.out_td.get()   and config.OUT_MKT_TD) +
@@ -310,6 +365,16 @@ class PreferencesDialog(tk.Toplevel):
                    (self.out_ship.get() and config.OUT_SHIP) +
                    (config.getint('output') & (config.OUT_MKT_EDDN | config.OUT_SYS_EDDN | config.OUT_SYS_DELAY)))
         config.set('outdir', self.outdir.get().startswith('~') and join(config.home, self.outdir.get()[2:]) or self.outdir.get())
+
+        lang_codes = { v: k for k, v in self.languages.items() }	# Codes by name
+        config.set('language', lang_codes.get(self.lang.get()) or '')
+        Translations.install(config.get('language') or None)
+
+        config.set('always_ontop', self.always_ontop.get())
+        config.set('theme', self.theme.get())
+        config.set('dark_text', self.theme_colors[0])
+        config.set('dark_highlight', self.theme_colors[1])
+        theme.apply(self.parent)
 
         # Notify
         if self.callback:

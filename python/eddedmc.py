@@ -10,6 +10,7 @@ import os
 from os.path import dirname, expanduser, isdir, join
 from time import gmtime, time, localtime, strftime, strptime
 from sys import platform
+from theme import theme
 
 import tkinter as tk
 import tkinter.filedialog as tkfiledialog
@@ -96,7 +97,51 @@ class Application(object):
         self.help_menu.add_command(command=self.help_about)
         self.menubar.add_cascade(menu=self.help_menu)
 
-        self.w.config(menu=self.menubar)
+        theme.register(self.menubar)	# menus and children aren't automatically registered
+        theme.register(self.file_menu)
+        theme.register(self.edit_menu)
+        theme.register(self.help_menu)
+
+        self.theme_icon = tk.PhotoImage(data = 'R0lGODlhFAAQAMZQAAoKCQoKCgsKCQwKCQsLCgwLCg4LCQ4LCg0MCg8MCRAMCRANChINCREOChIOChQPChgQChgRCxwTCyYVCSoXCS0YCTkdCTseCT0fCTsjDU0jB0EnDU8lB1ElB1MnCFIoCFMoCEkrDlkqCFwrCGEuCWIuCGQvCFs0D1w1D2wyCG0yCF82D182EHE0CHM0CHQ1CGQ5EHU2CHc3CHs4CH45CIA6CIE7CJdECIdLEolMEohQE5BQE41SFJBTE5lUE5pVE5RXFKNaFKVbFLVjFbZkFrxnFr9oFsNqFsVrF8RsFshtF89xF9NzGNh1GNl2GP+KG////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////yH5BAEKAH8ALAAAAAAUABAAAAeegAGCgiGDhoeIRDiIjIZGKzmNiAQBQxkRTU6am0tPCJSGShuSAUcLoIIbRYMFra4FAUgQAQCGJz6CDQ67vAFJJBi0hjBBD0w9PMnJOkAiJhaIKEI7HRoc19ceNAolwbWDLD8uAQnl5ga1I9CHEjEBAvDxAoMtFIYCBy+kFDKHAgM3ZtgYSLAGgwkp3pEyBOJCC2ELB31QATGioAoVAwEAOw==')
+        self.theme_minimize = tk.BitmapImage(data = '#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfc, 0x3f,\n   0xfc, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };\n')
+        self.theme_close    = tk.BitmapImage(data = '#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x0c, 0x30, 0x1c, 0x38, 0x38, 0x1c, 0x70, 0x0e,\n   0xe0, 0x07, 0xc0, 0x03, 0xc0, 0x03, 0xe0, 0x07, 0x70, 0x0e, 0x38, 0x1c,\n   0x1c, 0x38, 0x0c, 0x30, 0x00, 0x00, 0x00, 0x00 };\n')
+
+        self.theme_menubar = tk.Frame(frame)
+        self.theme_menubar.columnconfigure(2, weight=1)
+        theme_titlebar = tk.Label(self.theme_menubar, text=applongname, image=self.theme_icon, cursor='fleur', anchor=tk.W, compound=tk.LEFT)
+        theme_titlebar.grid(columnspan=3, padx=2, sticky=tk.NSEW)
+        self.drag_offset = None
+        theme_titlebar.bind('<Button-1>', self.drag_start)
+        theme_titlebar.bind('<B1-Motion>', self.drag_continue)
+        theme_titlebar.bind('<ButtonRelease-1>', self.drag_end)
+        theme_minimize = tk.Label(self.theme_menubar, image=self.theme_minimize)
+        theme_minimize.grid(row=0, column=3, padx=2)
+        theme.button_bind(theme_minimize, self.oniconify, image=self.theme_minimize)
+        theme_close = tk.Label(self.theme_menubar, image=self.theme_close)
+        theme_close.grid(row=0, column=4, padx=2)
+        theme.button_bind(theme_close, self.onexit, image=self.theme_close)
+        self.theme_file_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_file_menu.grid(row=1, column=0, padx=5, sticky=tk.W)
+        theme.button_bind(self.theme_file_menu, lambda e: self.file_menu.tk_popup(e.widget.winfo_rootx(), e.widget.winfo_rooty() + e.widget.winfo_height()))
+        self.theme_edit_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_edit_menu.grid(row=1, column=1, sticky=tk.W)
+        theme.button_bind(self.theme_edit_menu, lambda e: self.edit_menu.tk_popup(e.widget.winfo_rootx(), e.widget.winfo_rooty() + e.widget.winfo_height()))
+        self.theme_help_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_help_menu.grid(row=1, column=2, sticky=tk.W)
+        theme.button_bind(self.theme_help_menu, lambda e: self.help_menu.tk_popup(e.widget.winfo_rootx(), e.widget.winfo_rooty() + e.widget.winfo_height()))
+        tk.Frame(self.theme_menubar, highlightthickness=1).grid(columnspan=5, padx=5, sticky=tk.EW)
+        theme.register(self.theme_minimize)	# images aren't automatically registered
+        theme.register(self.theme_close)
+        self.blank_menubar = tk.Frame(frame)
+        tk.Label(self.blank_menubar).grid()
+        tk.Label(self.blank_menubar).grid()
+        tk.Frame(self.blank_menubar, height=2).grid()
+        theme.register_alternate((self.menubar, self.theme_menubar, self.blank_menubar), {'row':0, 'columnspan':2, 'sticky':tk.NSEW})
+        self.w.resizable(tk.TRUE, tk.FALSE)
+
+
+
+        #self.w.config(menu=self.menubar)
 
         if config.get('geometry'):
             match = re.match('\+([\-\d]+)\+([\-\d]+)', config.get('geometry'))
@@ -117,18 +162,26 @@ class Application(object):
                     self.w.geometry(config.get('geometry'))
         self.w.attributes('-topmost', config.getint('always_ontop') and 1 or 0)
 
+        theme.register(frame)
+        theme.apply(self.w)
+
         self.postprefs()
+
+        self.w.bind('<Map>', self.onmap)			# Special handling for overrideredict
+        self.w.bind('<Enter>', self.onenter)			# Special handling for transparency
+        self.w.bind('<FocusIn>', self.onenter)			#   "
+        self.w.bind('<Leave>', self.onleave)			#   "
+        self.w.bind('<FocusOut>', self.onleave)			#   "
 
         self.w.bind_all('<<JournalEvent>>', self.journal_event)	# Journal monitoring callback
         self.w.bind_all('<<PluginError>>', self.plugin_error)	# Statusbar
         self.w.bind_all('<<Quit>>', self.onexit)		# Updater
         self.w.protocol("WM_DELETE_WINDOW", self.onexit)
+        self.w.bind('<Control-c>', self.copy)
 
     def postprefs(self):
         self.set_labels()
         monitor.start(root)
-        #print("Start tick")
-        self.w.after(100,self.tick)
         self.status['text'] = 'Started'
 
 
@@ -143,13 +196,14 @@ class Application(object):
         self.menubar.entryconfigure(2, label=_('Edit'))	# Menu title
         self.menubar.entryconfigure(3, label=_('Help'))	# Menu title
 
+        self.theme_file_menu['text'] = _('File')	# Menu title
+        self.theme_edit_menu['text'] = _('Edit')	# Menu title
+        self.theme_help_menu['text'] = _('Help')	# Menu title
+
         self.file_menu.entryconfigure(0, label=_('Settings'))	# Item in the File menu on Windows
         self.file_menu.entryconfigure(2, label=_('Exit'))	# Item in the File menu on Windows
 
         self.help_menu.entryconfigure(0, label=_('About'))	# Help menu item
-
-    def tick(self):
-        self.w.after(10000,self.tick)
 
     def journal_event(self, event):         # called by event <<JournalEvent>> by monitor when it places an event in the queue
         while True:
@@ -197,7 +251,10 @@ class Application(object):
             self.ship_label['text'] = _('Ship') + ':'	# Main window
             self.ship['text'] = ''
 
-    def onexit(self):
+        self.edit_menu.entryconfigure(0, state=monitor.system and tk.NORMAL or tk.DISABLED)	# Copy
+
+
+    def onexit(self, event=None):
         print("on exit!")
         if platform!='darwin' or self.w.winfo_rooty()>0:	# http://core.tcl.tk/tk/tktview/c84f660833546b1b84e7
             print(f"Windows save geo {self.w.geometry()}")
@@ -208,8 +265,43 @@ class Application(object):
         config.close()
         self.w.destroy()
 
+    def drag_start(self, event):
+        self.drag_offset = (event.x_root - self.w.winfo_rootx(), event.y_root - self.w.winfo_rooty())
+
+    def drag_continue(self, event):
+        if self.drag_offset:
+            self.w.geometry('+%d+%d' % (event.x_root - self.drag_offset[0], event.y_root - self.drag_offset[1]))
+
+    def drag_end(self, event):
+        self.drag_offset = None
+
+    def oniconify(self, event=None):
+        self.w.overrideredirect(0)	# Can't iconize while overrideredirect
+        self.w.iconify()
+        self.w.update_idletasks()	# Size and windows styles get recalculated here
+        self.w.wait_visibility()	# Need main window to be re-created before returning
+        theme.active = None		# So theme will be re-applied on map
+
+    def onmap(self, event=None):
+        if event.widget == self.w:
+            theme.apply(self.w)
+
+    def onenter(self, event=None):
+        if config.getint('theme') > 1:
+            self.w.attributes("-transparentcolor", '')
+            self.blank_menubar.grid_remove()
+            self.theme_menubar.grid(row=0, columnspan=2, sticky=tk.NSEW)
+
+    def onleave(self, event=None):
+        if config.getint('theme') > 1 and event.widget==self.w:
+            self.w.attributes("-transparentcolor", 'grey4')
+            self.theme_menubar.grid_remove()
+            self.blank_menubar.grid(row=0, columnspan=2, sticky=tk.NSEW)
+
     def copy(self):
-        print("Copy sel")
+        if monitor.system:
+            self.w.clipboard_clear()
+            self.w.clipboard_append(monitor.station and '%s,%s' % (monitor.system, monitor.station) or monitor.system)
 
     def help_about(self):
         print("PY Harness for EDD")
