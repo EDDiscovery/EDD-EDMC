@@ -26,6 +26,10 @@ from ttkHyperlinkLabel import HyperlinkLabel
 
 import prefs
 
+import companion
+
+#import commodity
+#import td
 
 class Application(object):
 
@@ -77,6 +81,11 @@ class Application(object):
                     appitem[1].grid(row=row, column=1, sticky=tk.EW)
                 else:
                     appitem.grid(columnspan=2, sticky=tk.EW)
+
+        #row = frame.grid_size()[1]
+        #self.button = tk.Button(frame, text=_('Update'), width=28, default=tk.ACTIVE, state=tk.DISABLED)	# Update button in main window
+        #self.button.grid(row=row, columnspan=2, sticky=tk.NSEW)
+        #self.button.bind('<Button-1>', self.getandsend)
 
         self.status = tk.Label(frame, name='status', anchor=tk.W)
         self.status.grid(columnspan=2, sticky=tk.EW)
@@ -139,10 +148,6 @@ class Application(object):
         theme.register_alternate((self.menubar, self.theme_menubar, self.blank_menubar), {'row':0, 'columnspan':2, 'sticky':tk.NSEW})
         self.w.resizable(tk.TRUE, tk.FALSE)
 
-
-
-        #self.w.config(menu=self.menubar)
-
         if config.get('geometry'):
             match = re.match('\+([\-\d]+)\+([\-\d]+)', config.get('geometry'))
             if match:
@@ -179,6 +184,8 @@ class Application(object):
         self.w.protocol("WM_DELETE_WINDOW", self.onexit)
         self.w.bind('<Control-c>', self.copy)
 
+        self.lastmarket = None
+
     def postprefs(self):
         self.set_labels()
         monitor.start(root)
@@ -191,6 +198,9 @@ class Application(object):
                                       _('Ship')) + ':'	# Main window
         self.system_label['text']  = _('System') + ':'	# Main window
         self.station_label['text'] = _('Station') + ':'	# Main window
+
+        # self.button['text'] = _('Update')	# Update button in main window
+        # not yet self.button['state'] = tk.NORMAL
 
         self.menubar.entryconfigure(1, label=_('File'))	# Menu title
         self.menubar.entryconfigure(2, label=_('Edit'))	# Menu title
@@ -226,10 +236,14 @@ class Application(object):
             if entry['event'] == 'Loadout' and not monitor.state['Captain'] and config.getint('output') & config.OUT_SHIP:
                 monitor.export_ship()
 
+            if entry['event'] == 'Market'  and not monitor.state['Captain']:
+                lastmarket = entry
+
             # Plugins
             err = plug.notify_journal_entry(monitor.cmdr, monitor.is_beta, monitor.system, monitor.station, entry, monitor.state)
             if err:
                 self.status['text'] = err
+
 
     def updatedetails(self):
         if monitor.cmdr and monitor.state['Captain']:
@@ -237,6 +251,7 @@ class Application(object):
             self.ship_label['text'] = _('Role') + ':'	# Multicrew role label in main window
             self.ship.configure(state = tk.NORMAL, text = crewroletext(monitor.state['Role']), url = None)
         elif monitor.cmdr:
+            #print(f"Update details {monitor.system} {monitor.station}")
             if monitor.group:
                 self.cmdr['text'] = '%s / %s' % (monitor.cmdr, monitor.group)
             else:
@@ -244,8 +259,10 @@ class Application(object):
             self.ship_label['text'] = _('Ship') + ':'	# Main window
             self.ship['text'] = monitor.state['ShipName']
             self.system['text'] = monitor.system
-            self.station['text'] = monitor.station
-            #print(f"Set ship {monitor.state['ShipName']}")
+            if monitor.station is None:
+                self.station['text'] = ''
+            else:
+                self.station['text'] = monitor.station
         else:
             self.cmdr['text'] = ''
             self.ship_label['text'] = _('Ship') + ':'	# Main window
@@ -304,7 +321,15 @@ class Application(object):
             self.w.clipboard_append(monitor.station and '%s,%s' % (monitor.system, monitor.station) or monitor.system)
 
     def help_about(self):
-        print("PY Harness for EDD")
+        tk.messagebox.showinfo(
+            f'EDD-EDMC: {appversion}',
+                "This program supports EDMC plugins for EDD/EDDLite\r\n\r\n"
+                "Install this program, then run it, then close the program\r\n"
+                "This installs the adaptors into EDD/EDDLite\r\n\r\n"
+                "Then run EDD/EDDLite and they will automatically start and stop this program\r\n\r\n"
+                "Place plugins in %%appdatalocal%%\edd-edmc\plugins\r\n"
+
+            )
 
     # Display asynchronous error from plugin
     def plugin_error(self, event=None):
@@ -313,6 +338,20 @@ class Application(object):
             self.w.update_idletasks()
             if not config.getint('hotkey_mute'):
                 hotkeymgr.play_bad()
+
+    def getandsend(self,event = None):
+        # will be used if I bother to turn back on export
+        print("*** get and send - not implememented yet, turn on button above**")
+
+        if config.getint('output') & (config.OUT_MKT_CSV|config.OUT_MKT_TD):
+            if not lastmarket is None:
+                print("Lastmarket set")
+                if config.getint('output') & config.OUT_MKT_CSV:    # would need to fix the exporters
+                    commodity.export(lastmarket, COMMODITY_CSV)
+                if config.getint('output') & config.OUT_MKT_TD:
+                    td.export(lastmarket)
+
+
 
 # Run Code
 
@@ -328,5 +367,47 @@ if __name__ == "__main__":
     Translations.install(config.get('language') or None)	# Can generate errors so wait til log set up
 
     root = tk.Tk()
+
+    # NEW! make sure EDDLite and EDDiscovery has the interface DLL
+
+    import shutil
+
+    source = join(os.getcwd(),"EDMCHarness.dll")
+
+    if os.path.exists(source):
+        dllfolder = os.path.abspath(join(config.app_dir,'..\EDDLite\DLL'))
+        dllfolder2 = os.path.abspath(join(config.app_dir,'..\EDDiscovery\DLL'))
+
+        if not isdir(dllfolder):
+            os.makedirs(dllfolder)
+
+        if not isdir(dllfolder2):
+            os.makedirs(dllfolder2)
+
+        dest = join(dllfolder,"EDMCHarness.dll")
+        dest2 = join(dllfolder2,"EDMCHarness.dll")
+
+        print(f"DLL folder {source} to {dest}")
+        try:
+            shutil.copyfile(source,dest)
+        except:
+            e = sys.exc_info()[0]
+            print(f"Cannot copy DLL {e} - it may be in use")
+
+        print(f"DLL folder {source} to {dest2}")
+        try:
+            shutil.copyfile(source,dest2)
+        except:
+            e = sys.exc_info()[0]
+            print(f"Cannot copy DLL {e} - it may be in use")
+
+        if not os.path.exists(dest):
+            print(f"{dest} not installed!")
+        if not os.path.exists(dest2):
+            print(f"{dest2} not installed!")
+
+    else:
+        print("Harness DLL not present")
+
     app = Application(root)
     root.mainloop()

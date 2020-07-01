@@ -67,6 +67,8 @@ class EDLogs:
 
         self.my_observer = None
 
+        self.lastloc = None
+
     def start(self,root):
         self.root = root
         patterns = ["*.edd"]
@@ -112,7 +114,7 @@ class EDLogs:
             loghandle.seek(self.logposcurrent, SEEK_SET)	# reset EOF flag
 
             for line in loghandle:
-                print(f'Current Line {line}')
+                #print(f'Current Line {line}')
                 self.event_queue.append(line)
                 self.root.event_generate('<<JournalEvent>>', when="tail")
 
@@ -125,7 +127,13 @@ class EDLogs:
                 print(f'Stored Line {line}')
                 entry = self.parse_entry(line)             # stored ones are parsed now for state update
 
-                if entry['event'] == 'RefreshOver':       # its stored, and we have a refresh over, its the end of the refresh cycle.
+                if entry['event'] == 'Location' or entry['event'] == 'FSDJump':     # for now, not going to do anything with this, but may feed it thru if required later
+                    self.lastloc = entry
+
+                elif entry['event'] == 'RefreshOver':       # its stored, and we have a refresh over, its the end of the refresh cycle.
+                    if not (self.lastloc is None):
+                        print("Self lastloc set")       # maybe feed the loc thru if we get too much trouble with plugins
+
                     if self.live:                   # if game is running (between Commander and shutdown)
                         #print("Stored ended live, send a Startup")
                         entry = OrderedDict([
@@ -303,6 +311,7 @@ class EDLogs:
                 self.station = None
                 self.stationtype = None
                 self.stationservices = None
+                print("Ack Undocked")
             elif entry['event'] in ['Location', 'FSDJump', 'Docked']:
                 if entry['event'] == 'Location':
                     self.planet = entry.get('Body') if entry.get('BodyType') == 'Planet' else None

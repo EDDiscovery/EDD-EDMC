@@ -102,17 +102,17 @@ class PreferencesDialog(tk.Toplevel):
         outframe = nb.Frame(notebook)
         outframe.columnconfigure(0, weight=1)
 
-        output = config.getint('output') or config.OUT_SHIP	# default settings
+        output = config.getint('output') # default settings
 
         self.out_label = nb.Label(outframe, text=_('Please choose what data to save'))
         self.out_label.grid(columnspan=2, padx=PADX, sticky=tk.W)
-        self.out_csv = tk.IntVar(value = (output & config.OUT_MKT_CSV ) and 1)
-        self.out_csv_button = nb.Checkbutton(outframe, text=_('Market data in CSV format file'), variable=self.out_csv, command=self.outvarchanged)
-        self.out_csv_button.grid(columnspan=2, padx=BUTTONX, sticky=tk.W)
-        self.out_td  = tk.IntVar(value = (output & config.OUT_MKT_TD  ) and 1)
-        self.out_td_button = nb.Checkbutton(outframe, text=_('Market data in Trade Dangerous format file'), variable=self.out_td, command=self.outvarchanged)
-        self.out_td_button.grid(columnspan=2, padx=BUTTONX, sticky=tk.W)
-        self.out_ship= tk.IntVar(value = (output & config.OUT_SHIP and 1))
+#        self.out_csv = tk.IntVar(value = (output & config.OUT_MKT_CSV ) and 1)
+#        self.out_csv_button = nb.Checkbutton(outframe, text=_('Market data in CSV format file'), variable=self.out_csv, command=self.outvarchanged)
+#        self.out_csv_button.grid(columnspan=2, padx=BUTTONX, sticky=tk.W)
+#        self.out_td  = tk.IntVar(value = (output & config.OUT_MKT_TD  ) and 1)
+#        self.out_td_button = nb.Checkbutton(outframe, text=_('Market data in Trade Dangerous format file'), variable=self.out_td, command=self.outvarchanged)
+#        self.out_td_button.grid(columnspan=2, padx=BUTTONX, sticky=tk.W)
+        self.out_ship= tk.IntVar(value = (output & config.OUT_SHIP) and 1)
         self.out_ship_button = nb.Checkbutton(outframe, text=_('Ship loadout'), variable=self.out_ship, command=self.outvarchanged)	# Output setting
         self.out_ship_button.grid(columnspan=2, padx=BUTTONX, pady=(5,0), sticky=tk.W)
 
@@ -268,8 +268,11 @@ class PreferencesDialog(tk.Toplevel):
     def outvarchanged(self, event=None):
         self.displaypath(self.outdir, self.outdir_entry)
 
-        self.out_label['state'] = self.out_csv_button['state'] = self.out_td_button['state'] = self.out_ship_button['state'] = tk.NORMAL or tk.DISABLED
-        local = self.out_td.get() or self.out_csv.get() or self.out_ship.get()
+        self.out_label['state'] = tk.NORMAL or tk.DISABLED
+        #self.out_csv_button['state'] = self.out_td_button['state'] = tk.NORMAL or tk.DISABLED
+        self.out_ship_button['state'] = tk.NORMAL or tk.DISABLED
+        #local = self.out_td.get() or self.out_csv.get() or self.out_ship.get()
+        local = self.out_ship.get()
         self.outdir_label['state']      = local and tk.NORMAL  or tk.DISABLED
         self.outbutton['state']         = local and tk.NORMAL  or tk.DISABLED
         self.outdir_entry['state']      = local and 'readonly' or tk.DISABLED
@@ -359,11 +362,14 @@ class PreferencesDialog(tk.Toplevel):
 
     def apply(self):
         config.set('output',
-                   (self.out_td.get()   and config.OUT_MKT_TD) +
-                   (self.out_csv.get()  and config.OUT_MKT_CSV) +
+#                   (self.out_td.get()   and config.OUT_MKT_TD) +
+#                   (self.out_csv.get()  and config.OUT_MKT_CSV) +
                    (0) +
                    (self.out_ship.get() and config.OUT_SHIP) +
                    (config.getint('output') & (config.OUT_MKT_EDDN | config.OUT_SYS_EDDN | config.OUT_SYS_DELAY)))
+
+        #print(f"output {config.getint('output')} {self.out_ship.get()}")
+
         config.set('outdir', self.outdir.get().startswith('~') and join(config.home, self.outdir.get()[2:]) or self.outdir.get())
 
         lang_codes = { v: k for k, v in self.languages.items() }	# Codes by name

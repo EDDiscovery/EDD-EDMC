@@ -7,7 +7,7 @@ from sys import platform
 appname = 'EDD-EDMC'
 applongname = 'EDD-EDMC'
 appcmdname = 'unused'
-appversion = '3.5.1.0'
+appversion = '3.7.100.0'
 
 update_feed = 'unused'
 update_interval = 8*60*60
@@ -194,18 +194,18 @@ class Config(object):
 
             self.hkey = HKEY()
             disposition = DWORD()
-            if RegCreateKeyEx(HKEY_CURRENT_USER, r'Software\Marginal\EDMarketConnector', 0, None, 0, KEY_ALL_ACCESS, None, ctypes.byref(self.hkey), ctypes.byref(disposition)):
+            if RegCreateKeyEx(HKEY_CURRENT_USER, r'Software\EDD\EDD-EDMC', 0, None, 0, KEY_ALL_ACCESS, None, ctypes.byref(self.hkey), ctypes.byref(disposition)):
                 raise Exception()
 
             # set WinSparkle defaults - https://github.com/vslavik/winsparkle/wiki/Registry-Settings
-            sparklekey = HKEY()
-            if not RegCreateKeyEx(self.hkey, 'WinSparkle', 0, None, 0, KEY_ALL_ACCESS, None, ctypes.byref(sparklekey), ctypes.byref(disposition)):
-                if disposition.value == REG_CREATED_NEW_KEY:
-                    buf = ctypes.create_unicode_buffer('1')
-                    RegSetValueEx(sparklekey, 'CheckForUpdates', 0, 1, buf, len(buf)*2)
-                    buf = ctypes.create_unicode_buffer(str(update_interval))
-                    RegSetValueEx(sparklekey, 'UpdateInterval', 0, 1, buf, len(buf)*2)
-                RegCloseKey(sparklekey)
+            #sparklekey = HKEY()
+            #if not RegCreateKeyEx(self.hkey, 'WinSparkle', 0, None, 0, KEY_ALL_ACCESS, None, ctypes.byref(sparklekey), ctypes.byref(disposition)):
+            #    if disposition.value == REG_CREATED_NEW_KEY:
+            #        buf = ctypes.create_unicode_buffer('1')
+            #        RegSetValueEx(sparklekey, 'CheckForUpdates', 0, 1, buf, len(buf)*2)
+            #        buf = ctypes.create_unicode_buffer(str(update_interval))
+            #        RegSetValueEx(sparklekey, 'UpdateInterval', 0, 1, buf, len(buf)*2)
+            #    RegCloseKey(sparklekey)
 
             if not self.get('outdir') or not isdir(self.get('outdir')):
                 self.set('outdir', KnownFolderPath(FOLDERID_Documents) or self.home)

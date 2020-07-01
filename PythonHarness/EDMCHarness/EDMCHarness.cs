@@ -47,45 +47,57 @@ namespace PyHarness
             BaseUtilsHelpers.DeleteFileNoError(currentout);
             BaseUtilsHelpers.DeleteFileNoError(uiout);
 
-            string scriptrunnerfile = Path.Combine(EDMCAppFolder, "runfromscript.txt");
-
             string progtoexe = null;
             string cmdline = null;
             string workingdir = null;
+            bool consolemode = false;
+
+            string scriptrunnerfile = Path.Combine(EDMCAppFolder, "runfrom.txt");
 
             if (File.Exists(scriptrunnerfile))
             {
-                var pythonpaths = BaseUtils.PythonLaunch.PythonLauncher();
-
-                if (pythonpaths == null)
-                    return "!PY Harness Can't find a python launcher";
-
                 try
                 {
                     string[] lines = File.ReadAllLines(scriptrunnerfile);
 
-                    string[] runfrom = lines.Where(x => x.StartsWith("RUNFROM=")).Select(x => x).ToArray();
                     string[] console = lines.Where(x => x.StartsWith("CONSOLE=")).Select(x => x).ToArray();
+                    if (console.Length == 1 && console[0].Substring(8).Equals("true", StringComparison.InvariantCultureIgnoreCase))
+                        consolemode = true;
 
-                    if (runfrom.Length == 1 && console.Length == 1)
+                    string[] script = lines.Where(x => x.StartsWith("SCRIPT=")).Select(x => x).ToArray();
+
+                    if (script.Length == 1)
                     {
-                        string filename = runfrom[0].Substring(8);
-                        progtoexe = console[0].Substring(8).Equals("true", StringComparison.InvariantCultureIgnoreCase) ? pythonpaths.Item1 : pythonpaths.Item2;
-                        workingdir = Path.GetDirectoryName(filename);
-                        cmdline = filename;
+                        var pythonpaths = BaseUtils.PythonLaunch.PythonLauncher();
+
+                        if (pythonpaths != null)
+                        {
+                            string filename = script[0].Substring(7);
+                            progtoexe = consolemode ? pythonpaths.Item1 : pythonpaths.Item2;
+                            workingdir = Path.GetDirectoryName(filename);
+                            cmdline = filename;
+                        }
+                        else
+                            return "!PY Harness Can't find a python launcher";
                     }
-                    else
-                        return "!Runfromscript.txt in incorrect format";
                 }
                 catch
                 {
-                    return "!Cannot read Runfromscript.txt";
+                    return "!Cannot read Runfrom.txt";
                 }
             }
-            else
-            {
-                return "! To be done";
-                // try and find eddedmc.exe
+
+            if ( progtoexe == null )        // still no program
+            { 
+                string AppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "EDD-EDMC");
+                string App = Path.Combine(AppFolder, consolemode ? "eddedmc.exe" : "eddedmcwin.exe");
+
+                if (!File.Exists(App))
+                    return ("!Cannot find application to run");
+
+                progtoexe = App;
+                workingdir = Path.GetDirectoryName(App);
+                cmdline = "";
             }
 
             pyharness = new Process();
@@ -93,7 +105,7 @@ namespace PyHarness
             pyharness.StartInfo.Arguments = cmdline;
             pyharness.StartInfo.WorkingDirectory = workingdir;
 
-            System.Diagnostics.Debug.WriteLine("Run {0} {1} in {2}", progtoexe, cmdline, workingdir);
+            System.Diagnostics.Trace.WriteLine(string.Format("Run {0} {1} in {2}", progtoexe, cmdline, workingdir));
             bool started = pyharness.Start();
 
             if (!started)
@@ -103,7 +115,7 @@ namespace PyHarness
                 return "!PY Harness could not start script";
             }
 
-            System.Diagnostics.Debug.WriteLine("EDMC Harness started");
+            System.Diagnostics.Trace.WriteLine("EDMC Harness started");
             return "1.0.0.0;PLAYLASTFILELOAD";
         }
 
@@ -122,7 +134,7 @@ namespace PyHarness
                     s.WriteLine(f);
                     s.Close();
 
-                    pyharness.WaitForExit(60000);
+                    pyharness.WaitForExit(10000);
                     System.Diagnostics.Debug.WriteLine("Stopped python");
                 }
 
@@ -133,12 +145,12 @@ namespace PyHarness
                 BaseUtilsHelpers.DeleteFileNoError(currentout);
                 BaseUtilsHelpers.DeleteFileNoError(uiout);
             }
-            System.Diagnostics.Debug.WriteLine("Unloaded EDMC Harness");
+            System.Diagnostics.Trace.WriteLine("Unloaded EDMC Harness");
         }
 
         public void EDDRefresh(string cmd, EDDDLLInterfaces.EDDDLLIF.JournalEntry lastje)
         {
-            System.Diagnostics.Debug.WriteLine("EDMC Refresh");
+            //System.Diagnostics.Debug.WriteLine("EDMC Refresh");
 
             string f = string.Format("{{\"timestamp\":\"{0}\", \"event\":\"RefreshOver\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
             var s = File.AppendText(storedout);
@@ -148,7 +160,7 @@ namespace PyHarness
 
         public void EDDNewJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
         {
-            System.Diagnostics.Debug.WriteLine("EDMC New Journal Entry " + je.utctime);
+            //System.Diagnostics.Debug.WriteLine("EDMC New Journal Entry " + je.utctime);
             string filetoadd = je.stored ? storedout : currentout;
             var s = File.AppendText(filetoadd);
             s.WriteLine(je.json);
@@ -157,7 +169,7 @@ namespace PyHarness
 
         public void EDDNewUIEvent(string json)
         {
-            System.Diagnostics.Debug.WriteLine("EDMC New UI Event " + json);
+            //System.Diagnostics.Debug.WriteLine("EDMC New UI Event " + json);
             var s = File.AppendText(uiout);
             s.WriteLine(json);
             s.Close();
