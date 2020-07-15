@@ -4,7 +4,9 @@ import json
 import re
 
 from time import gmtime, localtime, sleep, strftime, strptime, time
+import os
 from os import listdir, SEEK_SET, SEEK_CUR, SEEK_END
+from os.path import dirname, expanduser, isdir, join
 from calendar import timegm
 if __debug__:
     from traceback import print_exc
@@ -31,6 +33,7 @@ class EDLogs:
         self.planet = None
         self.system = None
         self.station = None
+        self.station_marketid = None
         self.stationtype = None
         self.coordinates = None
         self.systemaddress = None
@@ -77,12 +80,22 @@ class EDLogs:
         case_sensitive = True
         my_event_handler = PatternMatchingEventHandler(patterns, ignore_patterns, ignore_directories, case_sensitive)
         my_event_handler.on_created = self.on_created
-        #my_event_handler.on_deleted = self.on_deleted
         my_event_handler.on_modified = self.on_modified
-        #my_event_handler.on_moved = self.on_moved
         go_recursively = False
 
         path = config.app_dir
+
+        # edmc may be slow starting, stored/current may already  be there, process
+
+        stored = join(path,"stored.edd")
+        if os.path.exists(stored):
+            print("Stored exists, processing")
+            self.readfile(stored)
+
+        current = join(path,"current.edd")
+        if os.path.exists(current):
+            print("Current exists, processing")
+            self.readfile(current)
 
         my_observer = Observer()
         my_observer.schedule(my_event_handler, path, recursive=go_recursively)
@@ -107,20 +120,22 @@ class EDLogs:
 
     def on_modified(self, event):
         #print(f"{event.src_path} has been modified")
+        self.readfile(event.src_path)
 
-        loghandle = open(event.src_path, 'rb', 0)	# unbuffered
+    def readfile(self,path):
+        loghandle = open(path, 'rb', 0)	# unbuffered
 
-        if 'current' in event.src_path:
+        if 'current' in path:
             loghandle.seek(self.logposcurrent, SEEK_SET)	# reset EOF flag
 
             for line in loghandle:
-                #print(f'Current Line {line}')
+                print(f'Current Line {line}')
                 self.event_queue.append(line)
                 self.root.event_generate('<<JournalEvent>>', when="tail")
 
             self.logposcurrent = loghandle.tell();
 
-        elif 'stored' in event.src_path:
+        elif 'stored' in path:
             loghandle.seek(self.logposstored, SEEK_SET)	# reset EOF flag
 
             for line in loghandle:
@@ -132,10 +147,7 @@ class EDLogs:
 
                 elif entry['event'] == 'RefreshOver':       # its stored, and we have a refresh over, its the end of the refresh cycle.
                     if not (self.lastloc is None):
-                        print("Self lastloc set")       # maybe feed the loc thru if we get too much trouble with plugins
-
-                    if self.live:                   # if game is running (between Commander and shutdown)
-                        #print("Stored ended live, send a Startup")
+                        print("Send a Startup as we have a location")
                         entry = OrderedDict([
                             ('timestamp', strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())),
                             ('event', 'StartUp'),
@@ -152,7 +164,7 @@ class EDLogs:
 
                         self.event_queue.append(json.dumps(entry, separators=(', ', ':')))
                     else:
-                        #print("Stored ended not live, send a None")
+                        print("No location, send a None")
                         self.event_queue.append(None)	# Generate null event to update the display (with possibly out-of-date info)
 
                     self.root.event_generate('<<JournalEvent>>', when="tail")   # generate an event for the foreground
@@ -166,7 +178,7 @@ class EDLogs:
             entry = self.parse_entry(self.event_queue.pop(0))
             return entry
 
-# Direct from EDMC
+# Direct from EDMC, synced 15 July 2020 with f7aa85a02d9e20c68bffc84161b620af5431cf7a
 
     def parse_entry(self, line):
         if line is None:
@@ -185,6 +197,7 @@ class EDLogs:
                 self.planet = None
                 self.system = None
                 self.station = None
+                self.station_marketid = None
                 self.stationtype = None
                 self.stationservices = None
                 self.coordinates = None
@@ -224,6 +237,7 @@ class EDLogs:
                 self.planet = None
                 self.system = None
                 self.station = None
+                self.station_marketid = None
                 self.stationtype = None
                 self.stationservices = None
                 self.coordinates = None
@@ -309,11 +323,11 @@ class EDLogs:
                     self.state['Modules'].pop(entry['FromSlot'], None)
             elif entry['event'] in ['Undocked']:
                 self.station = None
+                self.station_marketid = None
                 self.stationtype = None
                 self.stationservices = None
-                print("Ack Undocked")
-            elif entry['event'] in ['Location', 'FSDJump', 'Docked']:
-                if entry['event'] == 'Location':
+            elif entry['event'] in ['Location', 'FSDJump', 'Docked', 'CarrierJump']:
+                if entry['event'] in ('Location', 'CarrierJump'):
                     self.planet = entry.get('Body') if entry.get('BodyType') == 'Planet' else None
                 elif entry['event'] == 'FSDJump':
                     self.planet = None
@@ -322,8 +336,13 @@ class EDLogs:
                 elif self.system != entry['StarSystem']:
                     self.coordinates = None	# Docked event doesn't include coordinates
                 self.systemaddress = entry.get('SystemAddress')
+
+                if entry['event'] in ['Location', 'FSDJump', 'CarrierJump']:
+                    self.systempopulation = entry.get('Population')
+
                 (self.system, self.station) = (entry['StarSystem'] == 'ProvingGround' and 'CQC' or entry['StarSystem'],
                                                entry.get('StationName'))	# May be None
+                self.station_marketid = entry.get('MarketID') # May be None
                 self.stationtype = entry.get('StationType')	# May be None
                 self.stationservices = entry.get('StationServices')	# None under E:D < 2.4
             elif entry['event'] == 'ApproachBody':

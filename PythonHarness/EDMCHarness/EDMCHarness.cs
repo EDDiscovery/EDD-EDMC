@@ -51,6 +51,7 @@ namespace PyHarness
             string cmdline = null;
             string workingdir = null;
             bool consolemode = false;
+            bool runit = true;
 
             string scriptrunnerfile = Path.Combine(EDMCAppFolder, "runfrom.txt");
 
@@ -68,17 +69,25 @@ namespace PyHarness
 
                     if (script.Length == 1)
                     {
-                        var pythonpaths = BaseUtils.PythonLaunch.PythonLauncher();
+                        string filename = script[0].Substring(7);
 
-                        if (pythonpaths != null)
+                        if (filename.Equals("None", StringComparison.InvariantCultureIgnoreCase))
                         {
-                            string filename = script[0].Substring(7);
-                            progtoexe = consolemode ? pythonpaths.Item1 : pythonpaths.Item2;
-                            workingdir = Path.GetDirectoryName(filename);
-                            cmdline = filename;
+                            runit = false;
                         }
                         else
-                            return "!PY Harness Can't find a python launcher";
+                        {
+                            var pythonpaths = BaseUtils.PythonLaunch.PythonLauncher();
+
+                            if (pythonpaths != null)
+                            {
+                                progtoexe = consolemode ? pythonpaths.Item1 : pythonpaths.Item2;
+                                workingdir = Path.GetDirectoryName(filename);
+                                cmdline = filename;
+                            }
+                            else
+                                return "!PY Harness Can't find a python launcher";
+                        }
                     }
                 }
                 catch
@@ -87,7 +96,7 @@ namespace PyHarness
                 }
             }
 
-            if ( progtoexe == null )        // still no program
+            if ( runit && progtoexe == null )        // if to run, and still no program
             { 
                 string AppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "EDD-EDMC");
                 string App = Path.Combine(AppFolder, consolemode ? "eddedmc.exe" : "eddedmcwin.exe");
@@ -100,19 +109,22 @@ namespace PyHarness
                 cmdline = "";
             }
 
-            pyharness = new Process();
-            pyharness.StartInfo.FileName = progtoexe;
-            pyharness.StartInfo.Arguments = cmdline;
-            pyharness.StartInfo.WorkingDirectory = workingdir;
-
-            System.Diagnostics.Trace.WriteLine(string.Format("Run {0} {1} in {2}", progtoexe, cmdline, workingdir));
-            bool started = pyharness.Start();
-
-            if (!started)
+            if (progtoexe != null)                  // did we get one..
             {
-                pyharness.Dispose();
-                pyharness = null;
-                return "!PY Harness could not start script";
+                pyharness = new Process();
+                pyharness.StartInfo.FileName = progtoexe;
+                pyharness.StartInfo.Arguments = cmdline;
+                pyharness.StartInfo.WorkingDirectory = workingdir;
+
+                System.Diagnostics.Trace.WriteLine(string.Format("Run {0} {1} in {2}", progtoexe, cmdline, workingdir));
+                bool started = pyharness.Start();
+
+                if (!started)
+                {
+                    pyharness.Dispose();
+                    pyharness = null;
+                    return "!PY Harness could not start script";
+                }
             }
 
             System.Diagnostics.Trace.WriteLine("EDMC Harness started");
@@ -145,26 +157,41 @@ namespace PyHarness
                 BaseUtilsHelpers.DeleteFileNoError(currentout);
                 BaseUtilsHelpers.DeleteFileNoError(uiout);
             }
+
             System.Diagnostics.Trace.WriteLine("Unloaded EDMC Harness");
         }
 
+        private string lastcmdr = "";       // empty until first refresh, commander otherwise
+
         public void EDDRefresh(string cmd, EDDDLLInterfaces.EDDDLLIF.JournalEntry lastje)
         {
-            //System.Diagnostics.Debug.WriteLine("EDMC Refresh");
+            System.Diagnostics.Debug.WriteLine("EDMC Refresh {0}", lastcmdr);
+
+            string filetoadd = lastcmdr == "" ? storedout : currentout;     // so, first time, with lastcmdr="", we write to stored. After refresh we write to current
+
+            lastcmdr = lastje.cmdrname;     // now we have performed a first refresh, we record this to screen out duplicate refreshes
 
             string f = string.Format("{{\"timestamp\":\"{0}\", \"event\":\"RefreshOver\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
-            var s = File.AppendText(storedout);
+            var s = File.AppendText(filetoadd);
             s.WriteLine(f);
             s.Close();
         }
 
         public void EDDNewJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
         {
-            //System.Diagnostics.Debug.WriteLine("EDMC New Journal Entry " + je.utctime);
-            string filetoadd = je.stored ? storedout : currentout;
-            var s = File.AppendText(filetoadd);
-            s.WriteLine(je.json);
-            s.Close();
+            if (!je.stored || je.cmdrname != lastcmdr)       // if not stored, or not the same commander as the one at last refresh
+            {
+                string filetoadd = lastcmdr == "" ? storedout : currentout;     // so, first time, with lastcmdr="", we write to stored. After refresh we write to current
+                System.Diagnostics.Debug.WriteLine("EDMC New Journal Entry " + je.utctime + " " + je.name + " -> " + filetoadd);
+                var s = File.AppendText(filetoadd);
+                s.WriteLine(je.json);
+                s.Close();
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Not sending EDMC New Journal Entry " + je.utctime + " "  + je.name);
+            }
+
         }
 
         public void EDDNewUIEvent(string json)

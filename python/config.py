@@ -7,7 +7,7 @@ from sys import platform
 appname = 'EDD-EDMC'
 applongname = 'EDD-EDMC'
 appcmdname = 'unused'
-appversion = '3.7.100.0'
+appversion = '4.0.0.0'
 
 update_feed = 'unused'
 update_interval = 8*60*60

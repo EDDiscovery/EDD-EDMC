@@ -55,6 +55,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>copy edmcharness.dll %25LOCALAPPDATA%25\EDDLite\DLL</PostBuildEvent>
+    <PostBuildEvent>copy edmcharness.dll %25LOCALAPPDATA%25\EDDLite\DLL
+copy edmcharness.dll %25LOCALAPPDATA%25\EDDiscovery\DLL</PostBuildEvent>
   </PropertyGroup>
 </Project>

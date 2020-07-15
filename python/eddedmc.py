@@ -327,7 +327,7 @@ class Application(object):
                 "Install this program, then run it, then close the program\r\n"
                 "This installs the adaptors into EDD/EDDLite\r\n\r\n"
                 "Then run EDD/EDDLite and they will automatically start and stop this program\r\n\r\n"
-                "Place plugins in %%appdatalocal%%\edd-edmc\plugins\r\n"
+                "Place plugins in %appdatalocal%\edd-edmc\plugins\r\n"
 
             )
 
