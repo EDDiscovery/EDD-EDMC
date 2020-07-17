@@ -1,8 +1,6 @@
 # EDD-EDMC
 EDD-EDMC plug in for using EDMC plugins with EDD/EDDLite
 
-Coming soon!
-
 EDD-EDMC allows you to use EDMC plugins in EDD or EDDLite.
 
 For the current release [Release Notes](https://github.com/EDDiscovery/EDD-EDMC/releases)
