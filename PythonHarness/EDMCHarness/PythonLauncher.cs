@@ -22,9 +22,9 @@ namespace BaseUtils
 {
     static public class PythonLaunch
     {
-        static private Tuple<string,string> PythonCheckSpecificInstall(string root)     // return console exe, window exe.
+        static private Tuple<string,string> PythonCheckSpecificInstall(string root, RegistryKey basekey)     // return console exe, window exe.
         {
-            RegistryKey k2 = Registry.LocalMachine.OpenSubKey(root);
+            RegistryKey k2 = basekey.OpenSubKey(root);
             if (k2 != null)
             {
                 string[] keys = k2.GetSubKeyNames();
@@ -37,7 +37,7 @@ namespace BaseUtils
 
                         string last = root + "\\" + keys[keys.Length - 1] + @"\InstallPath";
 
-                        RegistryKey k3 = Registry.LocalMachine.OpenSubKey(last);
+                        RegistryKey k3 = basekey.OpenSubKey(last);
 
                         if (k3 != null)
                         {
@@ -69,9 +69,9 @@ namespace BaseUtils
             return null;
         }
 
-        static private Tuple<string,string> PythonCheckPyLauncher(string root)
+        static private Tuple<string,string> PythonCheckPyLauncher(string root, RegistryKey basekey)
         {
-            RegistryKey k = Registry.LocalMachine.OpenSubKey(root);
+            RegistryKey k = basekey.OpenSubKey(root);
             if (k != null)
             {
                 Object o1 = k.GetValue("");      // default has  py.exe
@@ -87,21 +87,28 @@ namespace BaseUtils
 
         static public Tuple<string,string> PythonLauncher()
         {
-            var py32bit = PythonCheckPyLauncher(@"SOFTWARE\WOW6432Node\Python\PyLauncher");
-            if (py32bit != null)
-                return py32bit;
+            RegistryKey basekey = Registry.CurrentUser;
 
-            var py64bit = PythonCheckPyLauncher(@"SOFTWARE\Python\PyLauncher");
-            if (py64bit != null)
-                return py64bit;
+            for (int i = 0; i < 2; i++)     // two goes, one with localmachine, one with current user (first)
+            {
+                var py32bit = PythonCheckPyLauncher(@"SOFTWARE\WOW6432Node\Python\PyLauncher", basekey);        // py.exe
+                if (py32bit != null)
+                    return py32bit;
 
-            var chk1 = PythonCheckSpecificInstall(@"SOFTWARE\Python\PythonCore");      
-            if (chk1 != null)
-                return chk1;
+                var py64bit = PythonCheckPyLauncher(@"SOFTWARE\Python\PyLauncher", basekey);
+                if (py64bit != null)
+                    return py64bit;
 
-            var chk2 = PythonCheckSpecificInstall(@"SOFTWARE\WOW6432Node\Python\PythonCore");
-            if (chk2 != null)
-                return chk2;
+                var chk1 = PythonCheckSpecificInstall(@"SOFTWARE\Python\PythonCore", basekey);
+                if (chk1 != null)
+                    return chk1;
+
+                var chk2 = PythonCheckSpecificInstall(@"SOFTWARE\WOW6432Node\Python\PythonCore", basekey);
+                if (chk2 != null)
+                    return chk2;
+
+                basekey = Registry.LocalMachine;
+            }
 
             return null;
         }
