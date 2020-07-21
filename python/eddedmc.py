@@ -359,7 +359,7 @@ class Application(object):
 if __name__ == "__main__":
     import tempfile
 
-    if sys.stdout is None:      # not running in a console
+    if sys.stdout is None or getattr(sys, 'frozen', False) == 'windows_exe':      # not running in a console
         sys.stdout = sys.stderr = open(join(tempfile.gettempdir(), '%s.log' % appname), 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
 
     print('%s %s %s' % (applongname, appversion, strftime('%Y-%m-%dT%H:%M:%S', localtime())))
