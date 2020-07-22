@@ -11,6 +11,7 @@ from os.path import dirname, expanduser, isdir, join
 from time import gmtime, time, localtime, strftime, strptime
 from sys import platform
 from theme import theme
+from ttkHyperlinkLabel import openurl
 
 import tkinter as tk
 import tkinter.filedialog as tkfiledialog
@@ -82,13 +83,13 @@ class Application(object):
                 else:
                     appitem.grid(columnspan=2, sticky=tk.EW)
 
-        #row = frame.grid_size()[1]
-        #self.button = tk.Button(frame, text=_('Update'), width=28, default=tk.ACTIVE, state=tk.DISABLED)	# Update button in main window
-        #self.button.grid(row=row, columnspan=2, sticky=tk.NSEW)
-        #self.button.bind('<Button-1>', self.getandsend)
-
         self.status = tk.Label(frame, name='status', anchor=tk.W)
         self.status.grid(columnspan=2, sticky=tk.EW)
+
+        self.newversion_button = tk.Button(frame, text='NewVersion', width=28, default=tk.ACTIVE)	# Update button in main window
+        row = frame.grid_size()[1]
+        self.newversion_button.grid(row=row, columnspan=2, sticky=tk.NSEW)
+        self.newversion_button.grid_remove();
 
         self.menubar = tk.Menu()
         self.file_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)
@@ -172,6 +173,8 @@ class Application(object):
 
         self.postprefs()
 
+        self.newversion_button.bind('<Button-1>', self.updateurl)
+
         self.w.bind('<Map>', self.onmap)			# Special handling for overrideredict
         self.w.bind('<Enter>', self.onenter)			# Special handling for transparency
         self.w.bind('<FocusIn>', self.onenter)			#   "
@@ -238,6 +241,11 @@ class Application(object):
 
             if entry['event'] == 'Market'  and not monitor.state['Captain']:
                 lastmarket = entry
+
+            if entry['event'] == 'Harness-NewVersion':
+                self.newversion_button['text'] = '!! New version Available:' + entry['Version']
+                self.newversion_button.grid()
+                #self.status['text'] = 'New version'
 
             # Plugins
             err = plug.notify_journal_entry(monitor.cmdr, monitor.is_beta, monitor.system, monitor.station, entry, monitor.state)
@@ -320,6 +328,10 @@ class Application(object):
             self.w.clipboard_clear()
             self.w.clipboard_append(monitor.station and '%s,%s' % (monitor.system, monitor.station) or monitor.system)
 
+    def updateurl(self, event=None):
+        openurl('https://github.com/EDDiscovery/EDD-EDMC/releases')
+
+
     def help_about(self):
         tk.messagebox.showinfo(
             f'EDD-EDMC: {appversion}',
@@ -336,8 +348,6 @@ class Application(object):
         if plug.last_error.get('msg'):
             self.status['text'] = plug.last_error['msg']
             self.w.update_idletasks()
-            if not config.getint('hotkey_mute'):
-                hotkeymgr.play_bad()
 
     def getandsend(self,event = None):
         # will be used if I bother to turn back on export
@@ -360,8 +370,12 @@ if __name__ == "__main__":
     import tempfile
 
     if sys.stdout is None:      # not running in a console
-        sys.stdout = sys.stderr = open(join(tempfile.gettempdir(), '%s.log' % appname), 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
+        logout = join(tempfile.gettempdir(), '%s.log' % appname)
+        #logout = "c:/code/edmc.log"
+        sys.stdout = sys.stderr = open(logout, 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
+        print(f"Log output to {logout}")
 
+    print(f"Running packaged {getattr(sys, 'frozen', False)}")
     print('%s %s %s' % (applongname, appversion, strftime('%Y-%m-%dT%H:%M:%S', localtime())))
 
     Translations.install(config.get('language') or None)	# Can generate errors so wait til log set up

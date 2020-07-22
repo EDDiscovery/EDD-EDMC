@@ -45,13 +45,34 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="BaseUtils.cs" />
+    <Compile Include="BaseUtils\BaseUtils.cs" />
+    <Compile Include="BaseUtils\GitHubClass.cs" />
+    <Compile Include="BaseUtils\GitHubRelease.cs" />
+    <Compile Include="BaseUtils\HttpCom.cs" />
+    <Compile Include="BaseUtils\NumberObjectExtensions.cs" />
+    <Compile Include="BaseUtils\QuickJSON.cs" />
+    <Compile Include="BaseUtils\ResponseData.cs" />
+    <Compile Include="BaseUtils\StringObjectExtensionsEscape.cs" />
+    <Compile Include="BaseUtils\StringObjectExtensionsNumbers.cs" />
+    <Compile Include="BaseUtils\StringParser.cs" />
     <Compile Include="EDMCHarness.cs" />
+    <Compile Include="Installer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="PythonLauncher.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="BaseUtils\PythonLauncher.cs" />
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Connected Services\" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

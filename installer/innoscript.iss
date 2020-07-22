@@ -61,6 +61,10 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+Root: HKLM; Subkey: "Software\EDD-EDMC"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\EDD-EDMC"; ValueType:string; ValueName:"InstallPath"; ValueData:"{app}"
+
 [Messages]
 SelectDirBrowseLabel=To continue, click Next.
 ConfirmUninstall=Are you sure you want to completely remove %1 and all of its components? Note that all your user data is not removed by this uninstall and is still stored in your local app data

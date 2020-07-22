@@ -1,19 +1,34 @@
-﻿using System;
-using System.Collections.Generic;
+﻿/*
+ * Copyright (C) 2020 EDDiscovery development team
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
+ * ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ * 
+ * EDDiscovery is not affiliated with Frontier Developments plc.
+ */
+
+using BaseUtils;
+using Microsoft.Win32;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Win32;
 
-namespace PyHarness
+namespace EDMCHarness
 {
     public class EDMCHarnessEDDClass      // EDDClass marks this as type to instance.  Names of members follow EDDInterfaces names
     {
         private string storedout;
         private string currentout;
         private string uiout;
+        private Object lockwrite = new object();
 
         public EDMCHarnessEDDClass()
         {
@@ -97,8 +112,18 @@ namespace PyHarness
             }
 
             if ( runit && progtoexe == null )        // if to run, and still no program
-            { 
+            {
+                // default app folder is programfiles\edd-edmc
                 string AppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "EDD-EDMC");
+
+                RegistryKey k = Registry.LocalMachine.OpenSubKey(@"Software\EDD-EDMC");
+                if ( k != null )    // see if installer put a install path key in there
+                {
+                    Object o1 = k.GetValue("InstallPath");
+                    if (o1 != null)
+                        AppFolder = o1 as string;
+                }
+
                 string App = Path.Combine(AppFolder, consolemode ? "eddedmc.exe" : "eddedmcwin.exe");
 
                 if (!File.Exists(App))
@@ -127,8 +152,20 @@ namespace PyHarness
                 }
             }
 
+            EDMCHarness.Installer.CheckForNewInstallerAsync(installercallback);
+
+            var currentVersion = System.Reflection.Assembly.GetExecutingAssembly().GetVersionString();
+            string f = string.Format("{{\"timestamp\":\"{0}\",\"event\":\"Harness-Version\",\"Version\":\"" + currentVersion + "\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
+            Write(storedout, f);
+
             System.Diagnostics.Trace.WriteLine("EDMC Harness started");
             return "1.0.0.0;PLAYLASTFILELOAD";
+        }
+
+        public void installercallback(BaseUtils.GitHubRelease rel)
+        {
+            string f = string.Format("{{\"timestamp\":\"{0}\",\"event\":\"Harness-NewVersion\",\"Version\":\"" + rel.ReleaseVersion + "\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
+            Write(storedout, f);
         }
 
         public void EDDTerminate()
@@ -142,10 +179,7 @@ namespace PyHarness
                     System.Diagnostics.Debug.WriteLine("Order stop");
 
                     string f = string.Format("{{\"timestamp\":\"{0}\", \"event\":\"ExitProgram\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
-                    var s = File.AppendText(currentout);         // use an event this way because CloseMainWindow does not work with a GUI window
-                    s.WriteLine(f);
-                    s.Close();
-
+                    Write(currentout, f);
                     pyharness.WaitForExit(10000);
                     System.Diagnostics.Debug.WriteLine("Stopped python");
                 }
@@ -172,9 +206,7 @@ namespace PyHarness
             lastcmdr = lastje.cmdrname;     // now we have performed a first refresh, we record this to screen out duplicate refreshes
 
             string f = string.Format("{{\"timestamp\":\"{0}\", \"event\":\"RefreshOver\"}}", DateTime.UtcNow.Truncate(TimeSpan.TicksPerSecond).ToStringZulu());
-            var s = File.AppendText(filetoadd);
-            s.WriteLine(f);
-            s.Close();
+            Write(filetoadd, f);
         }
 
         public void EDDNewJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
@@ -183,9 +215,7 @@ namespace PyHarness
             {
                 string filetoadd = lastcmdr == "" ? storedout : currentout;     // so, first time, with lastcmdr="", we write to stored. After refresh we write to current
                 System.Diagnostics.Debug.WriteLine("EDMC New Journal Entry " + je.utctime + " " + je.name + " -> " + filetoadd);
-                var s = File.AppendText(filetoadd);
-                s.WriteLine(je.json);
-                s.Close();
+                Write(filetoadd, je.json);
             }
             else
             {
@@ -197,9 +227,17 @@ namespace PyHarness
         public void EDDNewUIEvent(string json)
         {
             //System.Diagnostics.Debug.WriteLine("EDMC New UI Event " + json);
-            var s = File.AppendText(uiout);
-            s.WriteLine(json);
-            s.Close();
+            Write(uiout,json);
+        }
+
+        private void Write(string filetoadd, string txt)
+        {
+            lock (lockwrite)
+            {
+                var s = File.AppendText(filetoadd);
+                s.WriteLine(txt);
+                s.Close();
+            }
         }
 
     }

@@ -142,7 +142,11 @@ class EDLogs:
                 print(f'Stored Line {line}')
                 entry = self.parse_entry(line)             # stored ones are parsed now for state update
 
-                if entry['event'] == 'Location' or entry['event'] == 'FSDJump':     # for now, not going to do anything with this, but may feed it thru if required later
+                if entry['event'] == 'Harness-NewVersion':      # send this thru to the foreground for processing
+                    self.event_queue.append(line)
+                    self.root.event_generate('<<JournalEvent>>', when="tail")
+
+                elif entry['event'] == 'Location' or entry['event'] == 'FSDJump':     # for now, not going to do anything with this, but may feed it thru if required later
                     self.lastloc = entry
 
                 elif entry['event'] == 'RefreshOver':       # its stored, and we have a refresh over, its the end of the refresh cycle.

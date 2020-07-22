@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace PyHarness
+namespace BaseUtils
 {
     static class BaseUtilsHelpers  // copied from base utils, so we don't have to get into that dependency stuff
     {
@@ -38,12 +38,6 @@ namespace PyHarness
             }
 
             return -1;
-        }
-
-        static public int InvariantParseInt(this string s, int def)
-        {
-            int i;
-            return int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out i) ? i : def;
         }
 
         public static string ToStringZulu(this DateTime dt)     // zulu warrior format web style
