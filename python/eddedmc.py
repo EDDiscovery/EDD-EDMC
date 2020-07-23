@@ -369,14 +369,15 @@ class Application(object):
 if __name__ == "__main__":
     import tempfile
 
-    if sys.stdout is None:      # not running in a console
-        logout = join(tempfile.gettempdir(), '%s.log' % appname)
-        #logout = "c:/code/edmc.log"
-        sys.stdout = sys.stderr = open(logout, 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
-        print(f"Log output to {logout}")
+    stdoutnotpresent = sys.stdout is None
+    packaged = getattr(sys, 'frozen', False)
+    redirectedlogoutpath = join(tempfile.gettempdir(), '%s.log' % appname)
 
-    print(f"Running packaged {getattr(sys, 'frozen', False)}")
+    if stdoutnotpresent or packaged == 'windows_exe':      # if no std out, or running packaged in windows_exe (if running packaged from console its console_exe)
+        sys.stdout = sys.stderr = open(redirectedlogoutpath, 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
+
     print('%s %s %s' % (applongname, appversion, strftime('%Y-%m-%dT%H:%M:%S', localtime())))
+    print(f"nostdout {stdoutnotpresent} packaged {packaged}")
 
     Translations.install(config.get('language') or None)	# Can generate errors so wait til log set up
 
