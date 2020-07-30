@@ -45,6 +45,14 @@ public static class ObjectExtensionsStringsNumbers
     {
         return v.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
     }
+    public static string ToStringInvariant(this ulong v)
+    {
+        return v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+    public static string ToStringInvariant(this ulong v, string format)
+    {
+        return v.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+    }
     public static string ToStringIntValue(this bool v)
     {
         return v ? "1" : "0";
