@@ -3,6 +3,7 @@
 #------------------ ---------
 #certifi            2020.6.20  !! BEWARE DID NOT BUILD
 #certifi            2019.9.11 WORKS
+#certifi            2020.11.8 WORKS
 #chardet            3.0.4
 #idna               2.9
 #importlib-metadata 1.6.1

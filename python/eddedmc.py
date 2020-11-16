@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # requires pip install watchdog
 
+import os
 import sys
 import time
 import logging
 import re
-import sys
-import os
+
 from os.path import dirname, expanduser, isdir, join
 from time import gmtime, time, localtime, strftime, strptime
 from sys import platform
