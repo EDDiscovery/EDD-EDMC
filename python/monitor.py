@@ -597,6 +597,8 @@ class EDLogs:
         with open(filename, 'wt') as h:
             h.write(string)
 
+    def game_running():
+        return True
 
 
 # singleton

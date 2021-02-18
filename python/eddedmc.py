@@ -376,8 +376,8 @@ if __name__ == "__main__":
     if stdoutnotpresent or packaged == 'windows_exe':      # if no std out, or running packaged in windows_exe (if running packaged from console its console_exe)
         sys.stdout = sys.stderr = open(redirectedlogoutpath, 'wt', 1)	# unbuffered not allowed for text in python3, so use line buffering
 
-    print('%s %s %s' % (applongname, appversion, strftime('%Y-%m-%dT%H:%M:%S', localtime())))
-    print(f"nostdout {stdoutnotpresent} packaged {packaged}")
+    print('APP Values Are: %s %s %s' % (applongname, appversion, strftime('%Y-%m-%dT%H:%M:%S', localtime())))
+    print(f"Setup Is: nostdout {stdoutnotpresent} packaged {packaged}")
 
     Translations.install(config.get('language') or None)	# Can generate errors so wait til log set up
 

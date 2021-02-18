@@ -27,6 +27,8 @@ import os
 from os.path import exists, isdir, join
 import sys
 
+print(f"Python running from {os.path.dirname(sys.executable)}")
+
 import requests.certs
 
 MAINPROG = 'eddedmc.py'
@@ -37,6 +39,15 @@ CONSOLENAME = 'eddedmc'
 DATA_FILES = [
     ('', [
         ICONAME,
+        'EUROCAPS.TTF',
+        'commodity.csv',
+        'rare_commodity.csv',
+        'snd_good.wav',
+        'snd_bad.wav',
+        'modules.p',
+        'ships.p',
+        'stations.p',
+        'systems.p',
         '%s/DLLs/sqlite3.dll' % (sys.base_prefix),
     ]),
     ('L10n', [join('L10n',x) for x in os.listdir('L10n') if x.endswith('.strings')]),
@@ -55,6 +66,7 @@ OPTIONS =  { 'py2exe':
                     'includes': [
                         'shutil',         # Included for plugins
                         'zipfile',        # Included for plugins
+                        'timeout_session',
                         'csv'
                     ],
                     'excludes': [
