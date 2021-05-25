@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any, Optional
 import requests
 
 import EDMCLogging
-import killswitch
 import plug
 from config import config
 
@@ -52,7 +51,6 @@ this.system_population: Optional[int] = None
 this.station_link: 'Optional[Tk]' = None
 this.station: Optional[str] = None
 this.station_marketid: Optional[int] = None
-this.on_foot = False
 
 
 def system_url(system_name: str) -> str:
@@ -93,16 +91,6 @@ def prefs_changed(cmdr, is_beta):
 
 
 def journal_entry(cmdr, is_beta, system, station, entry, state):
-    if (ks := killswitch.get_disabled('plugins.eddb.journal')).disabled:
-        logger.warning(f'Journal processing for EDDB has been disabled: {ks.reason}')
-        plug.show_error(_('EDDB Journal processing disabled. See Log.'))
-        return
-
-    elif (ks := killswitch.get_disabled(f'plugins.eddb.journal.event.{entry["event"]}')).disabled:
-        logger.warning(f'Processing of event {entry["event"]} has been disabled: {ks.reason}')
-        return
-
-    this.on_foot = state['OnFoot']
     # Always update our system address even if we're not currently the provider for system or station, but dont update
     # on events that contain "future" data, such as FSDTarget
     if entry['event'] in ('Location', 'Docked', 'CarrierJump', 'FSDJump'):

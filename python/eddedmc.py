@@ -15,7 +15,7 @@ from sys import platform
 from time import localtime, strftime, time
 from typing import TYPE_CHECKING, Optional, Tuple
 
-# Have this as early as possible for people running EDMarketConnector.exe
+# Have this as early as possible for people running eddedmc.exe
 # from cmd.exe or a bat file or similar.  Else they might not be in the correct
 # place for things like config.py reading .gitversion
 if getattr(sys, 'frozen', False):
@@ -49,145 +49,10 @@ if __name__ == '__main__':
 # These need to be after the stdout/err redirect because they will cause
 # logging to be set up.
 # isort: off
-import killswitch
 from config import appversion, appversion_nobuild, config, copyright
 # isort: on
 
 from EDMCLogging import edmclogger, logger, logging
-from journal_lock import JournalLock, JournalLockResult
-
-
-if __name__ == '__main__':  # noqa: C901
-    def handle_edmc_callback_or_foregrounding() -> None:  # noqa: CCR001
-        """Handle any edmc:// auth callback, else foreground existing window."""
-        logger.trace('Begin...')
-    
-        if platform == 'win32':
-    
-            # If *this* instance hasn't locked, then another already has and we
-            # now need to do the edmc:// checks for auth callback
-            if locked != JournalLockResult.LOCKED:
-                import ctypes
-                from ctypes.wintypes import BOOL, HWND, INT, LPARAM, LPCWSTR, LPWSTR
-    
-                EnumWindows = ctypes.windll.user32.EnumWindows  # noqa: N806
-                GetClassName = ctypes.windll.user32.GetClassNameW  # noqa: N806
-                GetClassName.argtypes = [HWND, LPWSTR, ctypes.c_int]
-                GetWindowText = ctypes.windll.user32.GetWindowTextW  # noqa: N806
-                GetWindowText.argtypes = [HWND, LPWSTR, ctypes.c_int]
-                GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW  # noqa: N806
-                GetProcessHandleFromHwnd = ctypes.windll.oleacc.GetProcessHandleFromHwnd  # noqa: N806
-    
-                SW_RESTORE = 9  # noqa: N806
-                SetForegroundWindow = ctypes.windll.user32.SetForegroundWindow  # noqa: N806
-                ShowWindow = ctypes.windll.user32.ShowWindow  # noqa: N806
-                ShowWindowAsync = ctypes.windll.user32.ShowWindowAsync  # noqa: N806
-    
-                COINIT_MULTITHREADED = 0  # noqa: N806,F841
-                COINIT_APARTMENTTHREADED = 0x2  # noqa: N806
-                COINIT_DISABLE_OLE1DDE = 0x4  # noqa: N806
-                CoInitializeEx = ctypes.windll.ole32.CoInitializeEx  # noqa: N806
-    
-                ShellExecute = ctypes.windll.shell32.ShellExecuteW  # noqa: N806
-                ShellExecute.argtypes = [HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT]
-    
-                def window_title(h: int) -> Optional[str]:
-                    if h:
-                        text_length = GetWindowTextLength(h) + 1
-                        buf = ctypes.create_unicode_buffer(text_length)
-                        if GetWindowText(h, buf, text_length):
-                            return buf.value
-    
-                    return None
-    
-                @ctypes.WINFUNCTYPE(BOOL, HWND, LPARAM)
-                def enumwindowsproc(window_handle, l_param):  # noqa: CCR001
-                    """
-                    Determine if any window for the Application exists.
-    
-                    Called for each found window by EnumWindows().
-    
-                    When a match is found we check if we're being invoked as the
-                    edmc://auth handler.  If so we send the message to the existing
-                    process/window.  If not we'll raise that existing window to the
-                    foreground.
-                    :param window_handle: Window to check.
-                    :param l_param: The second parameter to the EnumWindows() call.
-                    :return: False if we found a match, else True to continue iteration
-                    """
-                    # class name limited to 256 - https://msdn.microsoft.com/en-us/library/windows/desktop/ms633576
-                    cls = ctypes.create_unicode_buffer(257)
-                    # This conditional is exploded to make debugging slightly easier
-                    if GetClassName(window_handle, cls, 257):
-                        if cls.value == 'TkTopLevel':
-                            if window_title(window_handle) == applongname:
-                                if GetProcessHandleFromHwnd(window_handle):
-                                    # If GetProcessHandleFromHwnd succeeds then the app is already running as this user
-                                    if len(sys.argv) > 1 and sys.argv[1].startswith(protocolhandler_redirect):
-                                        CoInitializeEx(0, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
-                                        # Wait for it to be responsive to avoid ShellExecute recursing
-                                        ShowWindow(window_handle, SW_RESTORE)
-                                        ShellExecute(0, None, sys.argv[1], None, None, SW_RESTORE)
-    
-                                    else:
-                                        ShowWindowAsync(window_handle, SW_RESTORE)
-                                        SetForegroundWindow(window_handle)
-    
-                            return False  # Indicate window found, so stop iterating
-    
-                    # Indicate that EnumWindows() needs to continue iterating
-                    return True  # Do not remove, else this function as a callback breaks
-    
-                # This performs the edmc://auth check and forward
-                # EnumWindows() will iterate through all open windows, calling
-                # enumwindwsproc() on each.  When an invocation returns False it
-                # stops iterating.
-                # Ref: <https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumwindows>
-                EnumWindows(enumwindowsproc, 0)
-
-        return
-
-    def already_running_popup():
-        """Create the "already running" popup."""
-        import tkinter as tk
-        from tkinter import ttk
-
-        root = tk.Tk(className=appname.lower())
-
-        frame = tk.Frame(root)
-        frame.grid(row=1, column=0, sticky=tk.NSEW)
-
-        label = tk.Label(frame)
-        label['text'] = 'An EDMarketConnector.exe process was already running, exiting.'
-        label.grid(row=1, column=0, sticky=tk.NSEW)
-
-        button = ttk.Button(frame, text='OK', command=lambda: sys.exit(0))
-        button.grid(row=2, column=0, sticky=tk.S)
-
-        root.mainloop()
-
-    journal_lock = JournalLock()
-    locked = journal_lock.obtain_lock()
-
-    handle_edmc_callback_or_foregrounding()
-
-    if locked == JournalLockResult.ALREADY_LOCKED:
-        # There's a copy already running.
-
-        logger.info("An EDMarketConnector.exe process was already running, exiting.")
-
-        # To be sure the user knows, we need a popup
-        already_running_popup()
-        # If the user closes the popup with the 'X', not the 'OK' button we'll
-        # reach here.
-        sys.exit(0)
-
-    if getattr(sys, 'frozen', False):
-        # Now that we're sure we're the only instance running we can truncate the logfile
-        logger.trace('Truncating plain logfile')
-        sys.stdout.seek(0)
-        sys.stdout.truncate()
-
 
 # See EDMCLogging.py docs.
 # isort: off
@@ -196,10 +61,10 @@ if TYPE_CHECKING:
     import update
     # from infi.systray import SysTrayIcon
 # isort: on
-
     def _(x: str) -> str:
         """Fake the l10n translation functions for typing."""
         return x
+
 
 import tkinter as tk
 import tkinter.filedialog
@@ -207,11 +72,8 @@ import tkinter.font
 import tkinter.messagebox
 from tkinter import ttk
 
-import commodity
 import plug
 import prefs
-import td
-from commodity import COMMODITY_CSV
 from dashboard import dashboard
 from edmc_data import ship_name_map
 from hotkey import hotkeymgr
@@ -582,9 +444,6 @@ class Application(object):
 
         # (Re-)install hotkey monitoring
         hotkeymgr.register(self.w, config.get_int('hotkey_code'), config.get_int('hotkey_mods'))
-
-        # Update Journal lock if needs be.
-        journal_lock.update_lock(self.w)
 
         # (Re-)install log monitoring
         if not monitor.start(self.w):

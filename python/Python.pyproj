@@ -34,7 +34,6 @@
     <Compile Include="edmc_data.py" />
     <Compile Include="findmypythonlocation.py" />
     <Compile Include="hotkey.py" />
-    <Compile Include="journal_lock.py" />
     <Compile Include="killswitch.py" />
     <Compile Include="l10n.py" />
     <Compile Include="monitor.py" />
@@ -42,7 +41,6 @@
     <Compile Include="plug.py" />
     <Compile Include="prefs.py" />
     <Compile Include="setup.py" />
-    <Compile Include="td.py" />
     <Compile Include="theme.py" />
     <Compile Include="timeout_session.py" />
     <Compile Include="ttkHyperlinkLabel.py" />
