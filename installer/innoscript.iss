@@ -49,7 +49,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 
 [Files]
-Source: "python\dist\*.*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs replacesameversion
+Source: "python\dist.win32\*.*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs replacesameversion
 Source: "pythonharness\edmcharness\bin\release\EDMCHarness.dll"; DestDir: "{app}"; Flags: ignoreversion replacesameversion
 
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files

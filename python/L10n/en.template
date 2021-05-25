@@ -1,6 +1,12 @@
 /* Language name */
 "!Language" = "English";
 
+/* Message next to 'UI Transparency' slider  [prefs.py] */
+"100 means fully opaque.{CR}Window is updated in real time" = "100 means fully opaque.{CR}Window is updated in real time";
+
+/* Text describing that value '100' means 'default', and changes require a restart [prefs.py] */
+"100 means Default{CR}Restart Required for{CR}changes to take effect!" = "100 means Default{CR}Restart Required for{CR}changes to take effect!";
+
 /* App menu entry on OSX. [EDMarketConnector.py] */
 "About {APP}" = "About {APP}";
 
@@ -118,6 +124,9 @@
 /* Menu title. [EDMarketConnector.py] */
 "Edit" = "Edit";
 
+/* Popup title: Warning about plugins without Python 3.x support [EDMarketConnector.py] */
+"EDMC: Plugins Without Python 3.x Support" = "EDMC: Plugins Without Python 3.x Support";
+
 /* Top rank. [stats.py] */
 "Elite" = "Elite";
 
@@ -136,6 +145,9 @@
 /* Trade rank. [stats.py] */
 "Entrepreneur" = "Entrepreneur";
 
+/* [companion.py] */
+"Error" = "Error";
+
 /* [eddn.py] */
 "Error: Can't connect to EDDN" = "Error: Can't connect to EDDN";
 
@@ -145,10 +157,20 @@
 /* [inara.py] */
 "Error: Can't connect to Inara" = "Error: Can't connect to Inara";
 
+/* [companion.py] */
+"Error: Couldn't check token customer_id" = "Error: Couldn't check token customer_id";
+
+/* [companion.py] */
+"Error: customer_id doesn't match!" = "Error: customer_id doesn't match!";
+
 /* [edsm.py] */
 "Error: EDSM {MSG}" = "Error: EDSM {MSG}";
 
+
 /* Raised when cannot contact the Companion API server. [companion.py] */
+"Error: Frontier CAPI didn't respond" = "Error: Frontier CAPI didn't respond";
+
+/* OLD: Raised when cannot contact the Companion API server. [companion.py] */
 "Error: Frontier server is down" = "Error: Frontier server is down";
 
 /* Raised when Companion API server is returning old data, e.g. when the servers are too busy. [companion.py] */
@@ -217,8 +239,17 @@
 /* Hotkey/Shortcut settings prompt on Windows. [prefs.py] */
 "Hotkey" = "Hotkey";
 
+/* Changed journal update_lock failed [monitor.py] */
+"Ignore" = "Ignore";
+
 /* Section heading in settings. [inara.py] */
 "Inara credentials" = "Inara credentials";
+
+/* Settings>Plugins>Information on migrating plugins [prefs.py] */
+"Information on migrating plugins" = "Information on migrating plugins";
+
+/* Changed journal update_lock failed [monitor.py] */
+"Journal directory already locked" = "Journal directory already locked";
 
 /* Hotkey/Shortcut settings prompt on OSX. [prefs.py] */
 "Keyboard shortcut" = "Keyboard shortcut";
@@ -232,8 +263,8 @@
 /* Appearance setting prompt. [prefs.py] */
 "Language" = "Language";
 
-/* [EDMarketConnector.py] */
-"Last updated at {HH}:{MM}:{SS}" = "Last updated at {HH}:{MM}:{SS}";
+/* [EDMarketConnector.py] - Leave '%H:%M:%S' as-is */
+"Last updated at %H:%M:%S" = "Last updated at %H:%M:%S";
 
 /* Federation rank. [stats.py] */
 "Lieutenant" = "Lieutenant";
@@ -244,11 +275,17 @@
 /* Cmdr stats. [stats.py] */
 "Loan" = "Loan";
 
+/* Label for user configured level of logging [prefs.py] */
+"Log Level" = "Log Level";
+
 /* [EDMarketConnector.py] */
 "Logging in..." = "Logging in...";
 
 /* Empire rank. [stats.py] */
 "Lord" = "Lord";
+
+/* Label for 'UI Transparency' option in [prefs.py] */
+"Main window transparency" = "Main window transparency";
 
 /* [prefs.py] */
 "Market data in CSV format file" = "Market data in CSV format file";
@@ -267,6 +304,9 @@
 
 /* Federation rank. [stats.py] */
 "Midshipman" = "Midshipman";
+
+/* Appearance setting. [EDMarketConnector.py] */
+"Minimize to system tray" = "Minimize to system tray";
 
 /* Explorer rank. [stats.py] */
 "Mostly Aimless" = "Mostly Aimless";
@@ -291,6 +331,9 @@
 
 /* [prefs.py] */
 "OK" = "OK";
+
+/* Popup body: Warning about plugins without Python 3.x support [EDMarketConnector.py] */
+"One or more of your enabled plugins do not yet have support for Python 3.x. Please see the list on the '{PLUGINS}' tab of '{FILE}' > '{SETTINGS}'. You should check if there is an updated version available, else alert the developer that they need to update the code for Python 3.x.\r\n\r\nYou can disable a plugin by renaming its folder to have '{DISABLED}' on the end of the name." = "One or more of your enabled plugins do not yet have support for Python 3.x. Please see the list on the '{PLUGINS}' tab of '{FILE}' > '{SETTINGS}'. You should check if there is an updated version available, else alert the developer that they need to update the code for Python 3.x.\r\n\r\nYou can disable a plugin by renaming its folder to have '{DISABLED}' on the end of the name.";
 
 /* Hotkey/Shortcut setting. [prefs.py] */
 "Only when Elite: Dangerous is the active app" = "Only when Elite: Dangerous is the active app";
@@ -333,6 +376,9 @@
 
 /* Section heading in settings. [prefs.py] */
 "Plugins folder" = "Plugins folder";
+
+/* Settings>Plugins>Plugins without Python 3.x support [prefs.py] */
+"Plugins Without Python 3.x Support:" = "Plugins Without Python 3.x Support:";
 
 /* Federation rank. [stats.py] */
 "Post Captain" = "Post Captain";
@@ -388,6 +434,9 @@
 /* Help menu item. [EDMarketConnector.py] */
 "Release Notes" = "Release Notes";
 
+/* Changed journal update_lock failed [monitor.py] */
+"Retry" = "Retry";
+
 /* Multicrew role label in main window. [EDMarketConnector.py] */
 "Role" = "Role";
 
@@ -433,6 +482,9 @@
 /* Setting to decide which ship outfitting website to link to - either E:D Shipyard or Coriolis. [prefs.py] */
 "Shipyard" = "Shipyard";
 
+/* Status line text that appears when process exit sequence starts [EDMarketConnector.py] */
+"Shutting down..." = "Shutting down...";
+
 /* Empire rank. [stats.py] */
 "Squire" = "Squire";
 
@@ -448,11 +500,17 @@
 /* Menu item. [EDMarketConnector.py] */
 "Status" = "Status";
 
+/* 'Suit' label in main UI' [EDMarketConnector.py] */
+"Suit" = "Suit";
+
 /* Explorer rank. [stats.py] */
 "Surveyor" = "Surveyor";
 
 /* Main window. [EDMarketConnector.py] */
 "System" = "System";
+
+/* Changed journal update_lock failed [monitor.py] */
+"The new Journal Directory location is already locked.{CR}You can either attempt to resolve this and then Retry, or choose to Ignore this." = "The new Journal Directory location is already locked.{CR}You can either attempt to resolve this and then Retry, or choose to Ignore this.";
 
 /* Appearance setting. [prefs.py] */
 "Theme" = "Theme";
@@ -472,8 +530,17 @@
 /* Trade rank. [stats.py] */
 "Tycoon" = "Tycoon";
 
+/* Label for 'UI Scaling' option [prefs.py] */
+"UI Scale Percentage" = "UI Scale Percentage";
+
+/* General 'Unknown', e.g. suit loadout */
+"Unknown" = "Unknown";
+
 /* Update button in main window. [EDMarketConnector.py] */
 "Update" = "Update";
+
+/* Option to use alternate URL method on shipyard links [prefs.py] */
+"Use alternate URL method" = "Use alternate URL method";
 
 /* Status dialog subtitle - CR value of ship. [stats.py] */
 "Value" = "Value";
@@ -507,4 +574,3 @@
 
 /* Shortcut settings prompt on OSX. [prefs.py] */
 "{APP} needs permission to use shortcuts" = "{APP} needs permission to use shortcuts";
-

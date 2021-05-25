@@ -1,15 +1,14 @@
-from sys import platform
-import webbrowser
-
 import tkinter as tk
-from tkinter import ttk
+import webbrowser
+from sys import platform
 from tkinter import font as tkFont
+from tkinter import ttk
 
 if platform == 'win32':
     import subprocess
-    import ctypes
-    from ctypes.wintypes import *
-    from winreg import CloseKey, OpenKeyEx, QueryValueEx, HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, KEY_READ, REG_SZ, REG_MULTI_SZ
+    from winreg import (
+        HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, CloseKey, OpenKeyEx, QueryValueEx
+    )
 
 # A clickable ttk Label
 #
@@ -18,6 +17,7 @@ if platform == 'win32':
 #   underline: If True/False the text is always/never underlined. If None (the default) the text is underlined only on hover.
 #   popup_copy: Whether right-click on non-empty label text pops up a context menu with a 'Copy' option. Defaults to no context menu. If popup_copy is a function it will be called with the current label text and should return a boolean.
 #
+# May be imported by plugins
 class HyperlinkLabel(platform == 'darwin' and tk.Label or ttk.Label, object):
 
     def __init__(self, master=None, **kw):

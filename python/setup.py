@@ -1,40 +1,102 @@
-# Tested on 3.7.7 64 bit with:
-#Package            Version
-#------------------ ---------
-#certifi            2020.6.20  !! BEWARE DID NOT BUILD
-#certifi            2019.9.11 WORKS
-#certifi            2020.11.8 WORKS
-#chardet            3.0.4
-#idna               2.9
-#importlib-metadata 1.6.1
-#keyring            21.2.1
-#pathtools          0.1.2
-#pip                19.2.3
-#py2exe             0.9.3.2     https://github.com/albertosottile/py2exe    pip install  py2exe-0.9.3.2-cp37-none-win_amd64.whl
-#pywin32-ctypes     0.2.0
-#requests           2.24.0
-#setuptools         41.2.0
-#urllib3            1.25.9
-#watchdog           0.10.2
-#zipp               3.1.0
-#
-#run: delete dist^py setup.py py2exe
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Script to build to .exe and .msi package.
 
-from distutils.core import setup
-import py2exe
-from config import appname as APPNAME, applongname as APPLONGNAME, appversion as VERSION
+.exe build is via py2exe on win32.
+.msi packaging utilises Windows SDK.
+"""
+
+import codecs
 import os
-from os.path import exists, isdir, join
+import platform
+import re
+import shutil
 import sys
+from distutils.core import setup
+from os.path import exists, isdir, join
+from tempfile import gettempdir
+from typing import Any, Generator, Set
+from config import (
+    appcmdname, applongname, appname, appversion, appversion_nobuild, copyright, git_shorthash_from_head, update_feed,
+    update_interval
+)
+from constants import GITVERSION_FILE
 
-print(f"Python running from {os.path.dirname(sys.executable)}")
+if sys.version_info[0:2] != (3, 9):
+    raise AssertionError(f'Unexpected python version {sys.version}')
 
-import requests.certs
+###########################################################################
+# Retrieve current git short hash and store in file GITVERSION_FILE
+git_shorthash = git_shorthash_from_head()
+if git_shorthash is None:
+    exit(-1)
 
-MAINPROG = 'eddedmc.py'
+with open(GITVERSION_FILE, 'w+', encoding='utf-8') as gvf:
+    gvf.write(git_shorthash)
+
+print(f'Git short hash: {git_shorthash}')
+###########################################################################
+
+if sys.platform == 'win32':
+    #assert platform.architecture()[0] == '32bit', 'Assumes a Python built for 32bit'
+    import py2exe  # noqa: F401 # Yes, this *is* used
+    dist_dir = 'dist.win32'
+
+elif sys.platform == 'darwin':
+    dist_dir = 'dist.macosx'
+
+else:
+    assert False, f'Unsupported platform {sys.platform}'
+
+# Split version, as py2exe wants the 'base' for version
+semver = appversion()
+appversion_str = str(semver)
+base_appversion = str(semver.truncate('patch'))
+
+if dist_dir and len(dist_dir) > 1 and isdir(dist_dir):
+    shutil.rmtree(dist_dir)
+
+# "Developer ID Application" name for signing
+macdeveloperid = None
+
+APP = 'eddedmc.py'
+WIN = 'eddedmcwin'
+CMD = 'eddedmc'
 ICONAME = 'EDDEDMC.ico'
-WINNAME = 'eddedmcwin'
-CONSOLENAME = 'eddedmc'
+PLUGINS = [
+    'plugins/coriolis.py',
+    'plugins/eddb.py',
+    'plugins/eddn.py',
+    'plugins/edsm.py',
+    'plugins/edsy.py',
+    'plugins/inara.py',
+]
+
+OPTIONS = {
+    'py2exe': {
+        'dist_dir': dist_dir,
+        'optimize': 2,
+        'packages': [
+            'sqlite3',  # Included for plugins
+        ],
+        'includes': [
+            'dataclasses',
+            'shutil',  # Included for plugins
+            'timeout_session',
+            'zipfile',  # Included for plugins
+        ],
+        'excludes': [
+            'distutils',
+            '_markerlib',
+            'optparse',
+            'PIL',
+            'pkg_resources',
+            'simplejson',
+            'unittest'
+        ],
+    }
+}
 
 DATA_FILES = [
     ('', [
@@ -50,59 +112,36 @@ DATA_FILES = [
         'systems.p',
         '%s/DLLs/sqlite3.dll' % (sys.base_prefix),
     ]),
-    ('L10n', [join('L10n',x) for x in os.listdir('L10n') if x.endswith('.strings')]),
+    ('L10n', [join('L10n', x) for x in os.listdir('L10n') if x.endswith('.strings')]),
+    ('plugins', PLUGINS),
 ]
 
-OPTIONS =  { 'py2exe':
-                {
-                    'dist_dir': "dist",
-                    'optimize': 2,
-                    'packages': [
-                        'certifi',
-                        'requests',
-                        'keyring.backends',
-                        'sqlite3',	# Included for plugins
-                    ],
-                    'includes': [
-                        'shutil',         # Included for plugins
-                        'zipfile',        # Included for plugins
-                        'timeout_session',
-                        'csv'
-                    ],
-                    'excludes': [
-                        'distutils', '_markerlib', 'optparse', 'PIL', 'pkg_resources', 'simplejson', 'unittest'
-                    ],
-                }
-            }
-
 setup(
-        name=APPLONGNAME,
-        version=VERSION,
-        data_files = DATA_FILES,
-        options = OPTIONS,
-
-        console = [
-                    {   'dest_base': CONSOLENAME,
-                        'script': MAINPROG,
-                        'company_name': 'EDDiscovery',
-                        'product_name': APPNAME,
-                        'version': VERSION,
-                        'copyright': '(c) 2020 Robby, (c) 2015-2019 Jonathan Harris, (c) 2020 EDCD',
-                    }
-                  ],
-
-
-        windows = [
-                    {'dest_base': WINNAME,
-                     'script': MAINPROG,
-                     'icon_resources': [(0, ICONAME)],
-                     'company_name': 'EDDiscovery',
-                     'product_name': APPNAME,
-                     'version': VERSION,
-                     'copyright': '(c) 2020 Robby, 2015-2019 Jonathan Harris, 2020 EDCD',
-                     #'other_resources': [(24, 1, open(APPNAME+'.manifest').read())],
-                     }
-                    ],
-
-        )
+    name=applongname,
+    version=appversion_str,
+    windows=[
+        {
+            'dest_base': WIN,
+            'script': APP,
+            'icon_resources': [(0, ICONAME)],
+            'company_name': 'EDDiscovery',
+            'product_name': appname,
+            'version': base_appversion,
+            'copyright': copyright,
+            #'other_resources': [(24, 1, open(f'{appcmdname}.manifest').read())],
+        }
+    ],
+    console=[
+        {
+            'dest_base': CMD,
+            'script': APP,
+            'company_name': 'EDDiscovery',
+            'product_name': appname,
+            'version': base_appversion,
+            'copyright': copyright,
+        }
+    ],
+    data_files=DATA_FILES,
+    options=OPTIONS,
+)
 
