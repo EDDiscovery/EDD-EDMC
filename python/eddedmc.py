@@ -385,7 +385,7 @@ class Application(object):
             self.suit['text'] = f'<{_("Unknown")}>'
             return
 
-        suitname = suit['locName']
+        suitname = suit['edmcName']
 
         if (suitloadout := monitor.state.get('SuitLoadoutCurrent')) is None:
             self.suit['text'] = ''
@@ -526,12 +526,9 @@ class Application(object):
                     logger.info("Can't start Status monitoring")
 
             # Export loadout
-            if entry['event'] == 'Loadout' and not monitor.state['Captain'] and config.getint(
-                    'output') & config.OUT_SHIP:
+            if entry['event'] == 'Loadout' and not monitor.state['Captain'] \
+                    and config.getint('output') & config.OUT_SHIP:
                 monitor.export_ship()
-
-            if entry['event'] == 'Market' and not monitor.state['Captain']:
-                lastmarket = entry
 
             if entry['event'] == 'Harness-NewVersion':
                 self.newversion_button['text'] = '!! New version Available:' + entry['Version']

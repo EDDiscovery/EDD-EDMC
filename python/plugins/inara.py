@@ -95,7 +95,7 @@ def journal_entry(  # noqa: C901, CCR001
     """
     event_name: str = entry['event']
 
-    if event_name == 'LoadGame' or this.newuser:
+    if event_name == 'LoadGame':
         # clear cached state
         this.system = None
         this.station = None

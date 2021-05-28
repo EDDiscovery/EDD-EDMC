@@ -4,7 +4,6 @@
 Script to build to .exe and .msi package.
 
 .exe build is via py2exe on win32.
-.msi packaging utilises Windows SDK.
 """
 
 import codecs
@@ -54,6 +53,8 @@ semver = appversion()
 appversion_str = str(semver)
 base_appversion = str(semver.truncate('patch'))
 
+print(f'Version: {base_appversion}')
+
 if dist_dir and len(dist_dir) > 1 and isdir(dist_dir):
     shutil.rmtree(dist_dir)
 
@@ -67,7 +68,6 @@ ICONAME = 'EDDEDMC.ico'
 PLUGINS = [
     'plugins/coriolis.py',
     'plugins/eddb.py',
-    'plugins/eddn.py',
     'plugins/edsm.py',
     'plugins/edsy.py',
     'plugins/inara.py',
@@ -127,6 +127,7 @@ setup(
             'company_name': 'EDDiscovery',
             'product_name': appname,
             'version': base_appversion,
+            'product_version': appversion_str,
             'copyright': copyright,
             #'other_resources': [(24, 1, open(f'{appcmdname}.manifest').read())],
         }
@@ -138,6 +139,7 @@ setup(
             'company_name': 'EDDiscovery',
             'product_name': appname,
             'version': base_appversion,
+            'product_version': appversion_str,
             'copyright': copyright,
         }
     ],

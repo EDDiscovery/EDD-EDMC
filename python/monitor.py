@@ -22,6 +22,7 @@ from watchdog.events import PatternMatchingEventHandler
 
 import util_ships
 from config import config
+from edmc_data import edmc_suit_shortnames, edmc_suit_symbol_localised
 from EDMCLogging import get_main_logger
 
 logger = get_main_logger()
@@ -92,7 +93,7 @@ class EDLogs:  # type: ignore # See below
         # If 3 we need to inject a special 'StartUp' event since consumers won't see the LoadGame event.
         self.live = False
 
-        self.live = False       # true between Commander and Shutdown
+        self.game_was_running = False  # For generation of the "ShutDown" event
 
         # Context for journal handling
         self.version: Optional[str] = None
@@ -119,6 +120,9 @@ class EDLogs:  # type: ignore # See below
         # Cmdr state shared with EDSM and plugins
         # If you change anything here update PLUGINS.md documentation!
         self.state: Dict = {
+            'GameLanguage':       None,  # From `Fileheader
+            'GameVersion':        None,  # From `Fileheader
+            'GameBuild':          None,  # From `Fileheader
             'Captain':            None,  # On a crew
             'Cargo':              defaultdict(int),
             'Credits':            None,
@@ -253,6 +257,7 @@ class EDLogs:  # type: ignore # See below
                             ('StarSystem', self.system),
                             ('StarPos', self.coordinates),
                             ('SystemAddress', self.systemaddress),
+                            ('Population', self.systempopulation),
                         ])
                         if self.planet:
                             entry['Body'] = self.planet
@@ -260,6 +265,7 @@ class EDLogs:  # type: ignore # See below
                         if self.station:
                             entry['StationName'] = self.station
                             entry['StationType'] = self.stationtype
+                            entry['MarketID'] = self.station_marketid
 
                         self.event_queue.append(json.dumps(entry, separators=(', ', ':')))
                     else:
@@ -277,7 +283,7 @@ class EDLogs:  # type: ignore # See below
             entry = self.parse_entry(self.event_queue.pop(0))
             return entry
 
-# Direct from EDMC, synced 24 May 2021 with <commit>
+# Direct from EDMC, synced 28 May 2021 with <commit>
 
     def parse_entry(self, line: bytes) -> MutableMapping[str, Any]:  # noqa: C901, CCR001
         """
@@ -318,13 +324,15 @@ class EDLogs:  # type: ignore # See below
                 self.systemaddress = None
                 self.started = None
                 self.__init_state()
+                # In self.state as well, as that's what plugins get
+                self.state['GameLanguage'] = entry['language']
+                self.state['GameVersion'] = entry['gameversion']
+                self.state['GameBuild'] = entry['build']
 
             elif event_type == 'Commander':
                 self.live = True  # First event in 3.0
 
             elif event_type == 'LoadGame':
-                # alpha4
-                # Odyssey: bool
                 self.cmdr = entry['Commander']
                 # 'Open', 'Solo', 'Group', or None for CQC (and Training - but no LoadGame event)
                 self.mode = entry.get('GameMode')
@@ -689,10 +697,36 @@ class EDLogs:  # type: ignore # See below
                     {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
                 )
 
-            elif event_type == 'BackPack':
+            elif event_type in ('BackPack', 'Backpack'):  # WORKAROUND 4.0.0.200: BackPack becomes Backpack
                 # TODO: v31 doc says this is`backpack.json` ... but Howard Chalkley
                 #       said it's `Backpack.json`
                 self.state['BackpackJSON'] = self.state['BackPack']
+
+                # Assume this reflects the current state when written
+                self.state['BackPack']['Component'] = defaultdict(int)
+                self.state['BackPack']['Consumable'] = defaultdict(int)
+                self.state['BackPack']['Item'] = defaultdict(int)
+                self.state['BackPack']['Data'] = defaultdict(int)
+
+                clean_components = self.coalesce_cargo(entry['Components'])
+                self.state['BackPack']['Component'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_components}
+                )
+
+                clean_consumables = self.coalesce_cargo(entry['Consumables'])
+                self.state['BackPack']['Consumable'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_consumables}
+                )
+
+                clean_items = self.coalesce_cargo(entry['Items'])
+                self.state['BackPack']['Item'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_items}
+                )
+
+                clean_data = self.coalesce_cargo(entry['Data'])
+                self.state['BackPack']['Data'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
+                )
 
             elif event_type == 'BackpackChange':
                 # Changes to Odyssey Backpack contents *other* than from a Transfer
@@ -760,19 +794,15 @@ class EDLogs:  # type: ignore # See below
 
             elif event_type == 'TransferMicroResources':
                 # Moving Odyssey MicroResources between ShipLocker and BackPack
+                # Backpack dropped as its done in BackpackChange
+                #
+                #  from: 4.0.0.200 -- Locker(Old|New)Count is now a thing.
                 for mr in entry['Transfers']:
                     category = self.category(mr['Category'])
                     name = self.canonicalise(mr['Name'])
 
-                    if mr['Direction'] == 'ToShipLocker':
-                        self.state[category][name] += mr['Count']
-                        self.state['BackPack'][category][name] -= mr['Count']
-
-                    elif mr['Direction'] == 'ToBackpack':
-                        self.state[category][name] -= mr['Count']
-                        self.state['BackPack'][category][name] += mr['Count']
-
-                    else:
+                    self.state[category][name] = mr['LockerNewCount']
+                    if mr['Direction'] not in ('ToShipLocker', 'ToBackpack'):
                         logger.warning(f'TransferMicroResources with unexpected Direction {mr["Direction"]=}: {mr=}')
 
                 # Paranoia check to see if anything has gone negative.
@@ -790,9 +820,12 @@ class EDLogs:  # type: ignore # See below
                 #     • Name
                 #     • Type
                 #     • OwnerID
-                for i in self.state['BackPack'][entry['Type']]:
-                    if i == entry['Name']:
-                        self.state['BackPack'][entry['Type']][i] += entry['Count']
+
+                # Handled by BackpackChange
+                # for i in self.state['BackPack'][entry['Type']]:
+                #     if i == entry['Name']:
+                #         self.state['BackPack'][entry['Type']][i] += entry['Count']
+                pass
 
             elif event_type == 'DropItems':
                 # alpha4
@@ -802,12 +835,15 @@ class EDLogs:  # type: ignore # See below
                 #     • OwnerID
                 #     • MissionID
                 #     • Count
-                for i in self.state['BackPack'][entry['Type']]:
-                    if i == entry['Name']:
-                        self.state['BackPack'][entry['Type']][i] -= entry['Count']
-                        # Paranoia in case we lost track
-                        if self.state['BackPack'][entry['Type']][i] < 0:
-                            self.state['BackPack'][entry['Type']][i] = 0
+
+                # This is handled by BackpackChange.
+                # for i in self.state['BackPack'][entry['Type']]:
+                #     if i == entry['Name']:
+                #         self.state['BackPack'][entry['Type']][i] -= entry['Count']
+                #         # Paranoia in case we lost track
+                #         if self.state['BackPack'][entry['Type']][i] < 0:
+                #             self.state['BackPack'][entry['Type']][i] = 0
+                pass
 
             elif event_type == 'UseConsumable':
                 # TODO: XXX: From v31 doc
@@ -857,8 +893,8 @@ class EDLogs:  # type: ignore # See below
                 #   "ModuleName":"wpn_s_pistol_plasma_charged",
                 #   "ModuleName_Localised":"Manticore Tormentor" } ] }
                 #
-                suit_slotid, suitloadout_slotid = self.suitloadout_store_from_event(entry)
-                if not self.suit_and_loadout_setcurrent(suit_slotid, suitloadout_slotid):
+                suitid, suitloadout_slotid = self.suitloadout_store_from_event(entry)
+                if not self.suit_and_loadout_setcurrent(suitid, suitloadout_slotid):
                     logger.error(f"Event was: {entry}")
 
             elif event_type == 'CreateSuitLoadout':
@@ -873,7 +909,10 @@ class EDLogs:  # type: ignore # See below
                 # { "SlotName":"SecondaryWeapon", "SuitModuleID":1700217869872834,
                 # "ModuleName":"wpn_s_pistol_kinetic_sauto", "ModuleName_Localised":"Karma P-15" } ] }
                 #
-                _, _ = self.suitloadout_store_from_event(entry)
+                suitid, suitloadout_slotid = self.suitloadout_store_from_event(entry)
+                # Creation doesn't mean equipping it
+                #  if not self.suit_and_loadout_setcurrent(suitid, suitloadout_slotid):
+                #      logger.error(f"Event was: {entry}")
 
             elif event_type == 'DeleteSuitLoadout':
                 # alpha4:
@@ -913,10 +952,12 @@ class EDLogs:  # type: ignore # See below
                 # alpha4 :
                 # { "timestamp":"2021-04-29T09:03:37Z", "event":"BuySuit", "Name":"UtilitySuit_Class1",
                 # "Name_Localised":"Maverick Suit", "Price":150000, "SuitID":1698364934364699 }
+                loc_name = entry.get('Name_Localised', entry['Name'])
                 self.state['Suits'][entry['SuitID']] = {
                     'name':      entry['Name'],
-                    'locName':   entry.get('Name_Localised', entry['Name']),
-                    'id': None,  # Is this an FDev ID for suit type ?
+                    'locName':   loc_name,
+                    'edmcName':  self.suit_sane_name(loc_name),
+                    'id':        None,  # Is this an FDev ID for suit type ?
                     'suitId':    entry['SuitID'],
                     'slots':     [],
                 }
@@ -1340,6 +1381,46 @@ class EDLogs:  # type: ignore # See below
             logger.debug(f'Invalid journal entry:\n{line!r}\n', exc_info=ex)
             return {'event': None}
 
+    def suit_sane_name(self, name: str) -> str:
+        """
+        Given an input suit name return the best 'sane' name we can.
+
+        AS of 4.0.0.102 the Journal events are fine for a Grade 1 suit, but
+        anything above that has broken SuitName_Localised strings, e.g.
+        $TacticalSuit_Class1_Name;
+
+        Also, if there isn't a SuitName_Localised value at all we'll use the
+        plain SuitName which can be, e.g. tacticalsuit_class3
+
+        If the names were correct we would get 'Dominator Suit' in this instance,
+        however what we want to return is, e.g. 'Dominator'.  As that's both
+        sufficient for disambiguation and more succinct.
+
+        :param name: Name that could be in any of the forms.
+        :return: Our sane version of this suit's name.
+        """
+        # WORKAROUND 4.0.0.200 | 2021-05-27: Suit names above Grade 1 aren't localised
+        #    properly by Frontier, so we do it ourselves.
+        # Stage 1: Is it in `$<type>_Class<X>_Name;` form ?
+        if m := re.fullmatch(r'(?i)^\$([^_]+)_Class([0-9]+)_Name;$', name):
+            n, c = m.group(1, 2)
+            name = n
+
+        # Stage 2: Is it in `<type>_class<x>` form ?
+        elif m := re.fullmatch(r'(?i)^([^_]+)_class([0-9]+)$', name):
+            n, c = m.group(1, 2)
+            name = n
+
+        # Now turn either of those into a '<type> Suit' (modulo language) form
+        if loc_lookup := edmc_suit_symbol_localised.get(self.state['GameLanguage']):
+            name = loc_lookup.get(name.lower(), name)
+        # WORKAROUND END
+
+        # Finally, map that to a form without the verbose ' Suit' on the end
+        name = edmc_suit_shortnames.get(name, name)
+
+        return name
+
     def suitloadout_store_from_event(self, entry) -> Tuple[int, int]:
         """
         Store Suit and SuitLoadout data from a journal event.
@@ -1350,45 +1431,58 @@ class EDLogs:  # type: ignore # See below
         :param entry: Journal entry - 'SwitchSuitLoadout' or 'SuitLoadout'
         :return Tuple[suit_slotid, suitloadout_slotid]: The IDs we set data for.
         """
-        suit_slotid = self.suit_loadout_id_from_loadoutid(entry['LoadoutID'])
-        # Initial suit containing just the data that is then embedded in
-        # the loadout
-        new_suit = {
-            'name':    entry['SuitName'],
-            'locName': entry.get('SuitName_Localised', entry['SuitName']),
-            'suitId':  entry['SuitID'],
-        }
+        # This is the full ID from Frontier, it's not a sparse array slot id
+        suitid = entry['SuitID']
+
+        # Check if this looks like a suit we already have stored, so as
+        # to avoid 'bad' Journal localised names.
+        suit = self.state['Suits'].get(f"{suitid}", None)
+        if suit is None:
+            # Initial suit containing just the data that is then embedded in
+            # the loadout
+
+            # TODO: Attempt to map SuitName_Localised to something sane, if it
+            #       isn't already.
+            suitname = entry.get('SuitName_Localised', entry['SuitName'])
+            edmc_suitname = self.suit_sane_name(suitname)
+            suit = {
+                'edmcName': edmc_suitname,
+                'locName':  suitname,
+                'suitId':   entry['SuitID'],
+                'name':     entry['SuitName'],
+            }
+
+        suitloadout_slotid = self.suit_loadout_id_from_loadoutid(entry['LoadoutID'])
         # Make the new loadout, in the CAPI format
         new_loadout = {
-            'loadoutSlotId': suit_slotid,
-            'suit':          new_suit,
+            'loadoutSlotId': suitloadout_slotid,
+            'suit':          suit,
             'name':          entry['LoadoutName'],
-            'slots':         self.suit_loadout_slots_array_to_dict(
-                entry['Modules']),
+            'slots':         self.suit_loadout_slots_array_to_dict(entry['Modules']),
         }
         # Assign this loadout into our state
-        self.state['SuitLoadouts'][f"{new_loadout['loadoutSlotId']}"] = new_loadout
+        self.state['SuitLoadouts'][f"{suitloadout_slotid}"] = new_loadout
 
         # Now add in the extra fields for new_suit to be a 'full' Suit structure
-        new_suit['id'] = None  # Not available in 4.0.0.100 journal event
-        new_suit['slots'] = new_loadout['slots']  # 'slots', not 'Modules', to match CAPI
-        # Ensure new_suit is in self.state['Suits']
-        self.state['Suits'][f"{suit_slotid}"] = new_suit
+        suit['id'] = suit.get('id')  # Not available in 4.0.0.100 journal event
+        suit['slots'] = new_loadout['slots']  # 'slots', not 'Modules', to match CAPI
+        # Ensure the suit is in self.state['Suits']
+        self.state['Suits'][f"{suitid}"] = suit
 
-        return suit_slotid, new_loadout['loadoutSlotId']
+        return suitid, suitloadout_slotid
 
-    def suit_and_loadout_setcurrent(self, suit_slotid: int, suitloadout_slotid: int) -> bool:
+    def suit_and_loadout_setcurrent(self, suitid: int, suitloadout_slotid: int) -> bool:
         """
         Set self.state for SuitCurrent and SuitLoadoutCurrent as requested.
 
         If the specified slots are unknown we abort and return False, else
         return True.
 
-        :param suit_slotid: Numeric ID of the slot for the suit.
+        :param suitid: Numeric ID of the suit.
         :param suitloadout_slotid: Numeric ID of the slot for the suit loadout.
         :return: True if we could do this, False if not.
         """
-        str_suitid = f"{suit_slotid}"
+        str_suitid = f"{suitid}"
         str_suitloadoutid = f"{suitloadout_slotid}"
 
         if (self.state['Suits'].get(str_suitid, False)
@@ -1397,7 +1491,7 @@ class EDLogs:  # type: ignore # See below
             self.state['SuitLoadoutCurrent'] = self.state['SuitLoadouts'][str_suitloadoutid]
             return True
 
-        logger.error(f"Tried to set a suit and suitloadout where we didn't know about both: {suit_slotid=}, "
+        logger.error(f"Tried to set a suit and suitloadout where we didn't know about both: {suitid=}, "
                      f"{str_suitloadoutid=}")
         return False
 
@@ -1410,7 +1504,7 @@ class EDLogs:  # type: ignore # See below
         :param entry: Journal event dict
         :return: True if passes validation, else False.
         """
-        # The event should have at least one of thes
+        # The event should have at least one of these
         if 'Engineers' not in entry and 'Progress' not in entry:
             logger.warning(f"EngineerProgress has neither 'Engineers' nor 'Progress': {entry=}")
             return False
@@ -1446,11 +1540,22 @@ class EDLogs:  # type: ignore # See below
                         return False
 
         if 'Progress' in entry:
-            for e in entry['Engineers']:
-                for f in ('Engineer', 'EngineerID', 'Rank', 'Progress', 'RankProgress'):
-                    if f not in e:
-                        logger.warning(f"Engineer entry without '{f}' key: {e=} in {entry=}")
-                        return False
+            # Progress is only a single Engineer, so it's not an array
+            # { "timestamp":"2021-05-24T17:57:52Z",
+            #   "event":"EngineerProgress",
+            #   "Engineer":"Felicity Farseer",
+            #   "EngineerID":300100,
+            #   "Progress":"Invited" }
+            for f in ('Engineer', 'EngineerID', 'Rank', 'Progress', 'RankProgress'):
+                if f not in entry:
+                    # For some Progress there's no Rank/RankProgress yet
+                    if f in ('Rank', 'RankProgress'):
+                        if (progress := entry.get('Progress', None)) is not None:
+                            if progress in ('Invited', 'Known'):
+                                continue
+
+                    logger.warning(f"Progress event without '{f}' key: {entry=}")
+                    return False
 
         return True
 
