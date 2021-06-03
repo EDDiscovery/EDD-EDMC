@@ -188,12 +188,12 @@ class EDLogs:  # type: ignore # See below
 
         stored = join(path, "stored.edd")
         if os.path.exists(stored):
-            print("Stored exists, processing")
+            logger.info("Stored exists, processing")
             self.readfile(stored)
 
         current = join(path, "current.edd")
         if os.path.exists(current):
-            print("Current exists, processing")
+            logger.info("Current exists, processing")
             self.readfile(current)
 
         my_observer = Observer()
@@ -203,19 +203,19 @@ class EDLogs:  # type: ignore # See below
         #print(f"Monitor started on {path}")
 
     def stop(self):
-        print("Monitor stopping")
+        logger.info("Monitor stopping")
         if self.my_observer:
             self.my_observer.stop()
         if self.my_observer:
             self.my_observer.join()
             self.my_observer = None
-        print("Monitor stopped")
+        logger.info("Monitor stopped")
 
     def close(self):
         self.stop()
 
     def on_created(self,event):
-        print(f"{event.src_path} has been created!")
+        logger.info(f"{event.src_path} has been created!")
 
     def on_modified(self, event):
         #print(f"{event.src_path} has been modified")
@@ -228,17 +228,17 @@ class EDLogs:  # type: ignore # See below
             loghandle.seek(self.logposcurrent, SEEK_SET)	# reset EOF flag
 
             for line in loghandle:
-                print(f'Current Line {line}')
+                logger.info(f'Current Line {line}')
                 self.event_queue.append(line)
                 self.root.event_generate('<<JournalEvent>>', when="tail")
 
-            self.logposcurrent = loghandle.tell();
+            self.logposcurrent = loghandle.tell()
 
         elif 'stored' in path:
             loghandle.seek(self.logposstored, SEEK_SET)	# reset EOF flag
 
             for line in loghandle:
-                print(f'Stored Line {line}')
+                logger.info(f'Stored Line {line}')
                 entry = self.parse_entry(line)             # stored ones are parsed now for state update
 
                 if entry['event'] == 'Harness-NewVersion':      # send this thru to the foreground for processing
@@ -250,7 +250,7 @@ class EDLogs:  # type: ignore # See below
 
                 elif entry['event'] == 'RefreshOver':       # its stored, and we have a refresh over, its the end of the refresh cycle.
                     if not (self.lastloc is None):
-                        print("Send a Startup as we have a location")
+                        logger.info("Send a Startup as we have a location")
                         entry = OrderedDict([
                             ('timestamp', strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())),
                             ('event', 'StartUp'),
@@ -269,7 +269,7 @@ class EDLogs:  # type: ignore # See below
 
                         self.event_queue.append(json.dumps(entry, separators=(', ', ':')))
                     else:
-                        print("No location, send a None")
+                        logger.info("No location, send a None")
                         self.event_queue.append(None)	# Generate null event to update the display (with possibly out-of-date info)
 
                     self.root.event_generate('<<JournalEvent>>', when="tail")   # generate an event for the foreground
