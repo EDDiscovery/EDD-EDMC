@@ -57,10 +57,11 @@ from EDMCLogging import edmclogger, logger, logging
 # See EDMCLogging.py docs.
 # isort: off
 if TYPE_CHECKING:
-    from logging import trace, TRACE  # type: ignore # noqa: F401
+    from logging import TRACE  # type: ignore # noqa: F401 # Needed to update mypy
     import update
     # from infi.systray import SysTrayIcon
-# isort: on
+    # isort: on
+
     def _(x: str) -> str:
         """Fake the l10n translation functions for typing."""
         return x
