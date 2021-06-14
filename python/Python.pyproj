@@ -33,8 +33,6 @@
     <Compile Include="EDMCLogging.py" />
     <Compile Include="edmc_data.py" />
     <Compile Include="findmypythonlocation.py" />
-    <Compile Include="hotkey.py" />
-    <Compile Include="killswitch.py" />
     <Compile Include="l10n.py" />
     <Compile Include="monitor.py" />
     <Compile Include="myNotebook.py" />

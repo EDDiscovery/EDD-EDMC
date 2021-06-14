@@ -66,7 +66,6 @@ if TYPE_CHECKING:
         """Fake the l10n translation functions for typing."""
         return x
 
-
 import tkinter as tk
 import tkinter.filedialog
 import tkinter.font
@@ -77,7 +76,6 @@ import plug
 import prefs
 from dashboard import dashboard
 from edmc_data import ship_name_map
-from hotkey import hotkeymgr
 from l10n import Translations
 from monitor import monitor
 from theme import theme
@@ -383,7 +381,7 @@ class Application(object):
             return
 
         if (suit := monitor.state.get('SuitCurrent')) is None:
-            self.suit['text'] = f'<{_("Unknown")}>'
+            self.suit['text'] = f'<{_("Unknown")}>'  # LANG: Unknown suit
             return
 
         suitname = suit['edmcName']
@@ -443,37 +441,35 @@ class Application(object):
         self.system.configure(url=self.system_url)
         self.station.configure(url=self.station_url)
 
-        # (Re-)install hotkey monitoring
-        hotkeymgr.register(self.w, config.get_int('hotkey_code'), config.get_int('hotkey_mods'))
-
         # (Re-)install log monitoring
         if not monitor.start(self.w):
-            self.status['text'] = f'Error: Check {_("E:D journal file location")}'
+            # LANG: ED Journal file location appears to be in error
+            self.status['text'] = _('Error: Check E:D journal file location')
         self.status['text'] = 'Started'
 
     def set_labels(self):
         """Set main window labels, e.g. after language change."""
-        self.cmdr_label['text'] = _('Cmdr') + ':'  # Main window
-        # Multicrew role label in main window
+        self.cmdr_label['text'] = _('Cmdr') + ':'  # LANG: Label for commander name in main window
+        # LANG: 'Ship' or multi-crew role label in main window, as applicable
         self.ship_label['text'] = (monitor.state['Captain'] and _('Role') or _('Ship')) + ':'  # Main window
-        self.suit_label['text'] = _('Suit') + ':'  # Main window
-        self.system_label['text'] = _('System') + ':'  # Main window
-        self.station_label['text'] = _('Station') + ':'  # Main window
+        self.suit_label['text'] = _('Suit') + ':'  # LANG: Label for 'Suit' line in main UI
+        self.system_label['text'] = _('System') + ':'  # LANG: Label for 'System' line in main UI
+        self.station_label['text'] = _('Station') + ':'  # LANG: Label for 'Station' line in main UI
 
         # self.button['text'] = _('Update')	# Update button in main window
         # not yet self.button['state'] = tk.NORMAL
 
-        self.menubar.entryconfigure(1, label=_('File'))  # Menu title
-        self.menubar.entryconfigure(2, label=_('Edit'))  # Menu title
-        self.menubar.entryconfigure(3, label=_('Help'))  # Menu title
-        self.theme_file_menu['text'] = _('File')  # Menu title
-        self.theme_edit_menu['text'] = _('Edit')  # Menu title
-        self.theme_help_menu['text'] = _('Help')  # Menu title
+        self.menubar.entryconfigure(1, label=_('File'))  # LANG: 'File' menu title
+        self.menubar.entryconfigure(2, label=_('Edit'))  # LANG: 'Edit' menu title
+        self.menubar.entryconfigure(3, label=_('Help'))  # LANG: 'Help' menu title
+        self.theme_file_menu['text'] = _('File')  # LANG: 'File' menu title
+        self.theme_edit_menu['text'] = _('Edit')  # LANG: 'Edit' menu title
+        self.theme_help_menu['text'] = _('Help')  # LANG: 'Help' menu title
 
-        self.file_menu.entryconfigure(0, label=_('Settings'))	# Item in the File menu on Windows
-        self.file_menu.entryconfigure(2, label=_('Exit'))	# Item in the File menu on Windows
+        self.file_menu.entryconfigure(0, label=_('Settings'))  # LANG: File > Settings (Windows)
+        self.file_menu.entryconfigure(4, label=_('Exit'))  # LANG: File > Exit
 
-        self.help_menu.entryconfigure(0, label=_('About'))	# Help menu item
+        self.help_menu.entryconfigure(0, label=_("About {APP}").format(APP=applongname))  # LANG: Help > About App
 
     # def getandsend(self, event=None):
     #     # will be used if I bother to turn back on export
@@ -545,8 +541,6 @@ class Application(object):
                                             monitor.state)
             if err:
                 self.status['text'] = err
-                if not config.get_int('hotkey_mute'):
-                    hotkeymgr.play_bad()
 
     def updatedetails(self, entry):
 
@@ -559,14 +553,14 @@ class Application(object):
             return {
                 None:         '',
                 'Idle':       '',
-                'FighterCon': _('Fighter'),  # Multicrew role
-                'FireCon':    _('Gunner'),  # Multicrew role
-                'FlightCon':  _('Helm'),  # Multicrew role
+                'FighterCon': _('Fighter'),  # LANG: Multicrew role
+                'FireCon':    _('Gunner'),  # LANG: Multicrew role
+                'FlightCon':  _('Helm'),  # LANG: Multicrew role
             }.get(role, role)
 
         if monitor.cmdr and monitor.state['Captain']:
             self.cmdr['text'] = f'{monitor.cmdr} / {monitor.state["Captain"]}'
-            self.ship_label['text'] = _('Role') + ':'  # Multicrew role label in main window
+            self.ship_label['text'] = _('Role') + ':'  # LANG: Multicrew role label in main window
             self.ship.configure(state=tk.NORMAL, text=crewroletext(monitor.state['Role']), url=None)
 
         elif monitor.cmdr:
@@ -576,7 +570,7 @@ class Application(object):
             else:
                 self.cmdr['text'] = monitor.cmdr
 
-            self.ship_label['text'] = _('Ship') + ':'  # Main window
+            self.ship_label['text'] = _('Ship') + ':'  # LANG: 'Ship' label in main UI
 
             # TODO: Show something else when on_foot
             if monitor.state['ShipName']:
@@ -599,7 +593,7 @@ class Application(object):
 
         else:
             self.cmdr['text'] = ''
-            self.ship_label['text'] = _('Ship') + ':'  # Main window
+            self.ship_label['text'] = _('Ship') + ':'  # LANG: 'Ship' label in main UI
             self.ship['text'] = ''
 
         if monitor.cmdr and monitor.is_beta:
@@ -641,16 +635,12 @@ class Application(object):
         err = plug.notify_dashboard_entry(monitor.cmdr, monitor.is_beta, entry)
         if err:
             self.status['text'] = err
-            if not config.get_int('hotkey_mute'):
-                hotkeymgr.play_bad()
 
     def plugin_error(self, event=None) -> None:
         """Display asynchronous error from plugin."""
         if plug.last_error.get('msg'):
             self.status['text'] = plug.last_error['msg']
             self.w.update_idletasks()
-            if not config.get_int('hotkey_mute'):
-                hotkeymgr.play_bad()
 
     def shipyard_url(self, shipname: str) -> str:
         """Despatch a ship URL to the configured handler."""
@@ -724,6 +714,7 @@ class Application(object):
             config.set('geometry', f'+{x}+{y}')
 
         # Let the user know we're shutting down.
+        # LANG: The application is shutting down
         self.status['text'] = _('Shutting down...')
         self.w.update_idletasks()
         logger.info('Starting shutdown procedures...')
@@ -733,11 +724,6 @@ class Application(object):
         # we'd otherwise have already stopped.
         logger.info('Notifying plugins to stop...')
         plug.notify_stop()
-
-        # Handling of application hotkeys now so the user can't possible cause
-        # an issue via triggering one.
-        logger.info('Unregistering hotkey manager...')
-        hotkeymgr.unregister()
 
         # Now the main programmatic input methods
         logger.info('Closing dashboard...')
@@ -949,18 +935,16 @@ sys.path: {sys.path}'''
         """Display message about plugins not updated for Python 3.x."""
         plugins_not_py3_last = config.get_int('plugins_not_py3_last', default=0)
         if (plugins_not_py3_last + 86400) < int(time()) and len(plug.PLUGINS_not_py3):
-            # Yes, this is horribly hacky so as to be sure we match the key
-            # that we told Translators to use.
-            popup_text = "One or more of your enabled plugins do not yet have support for Python 3.x. Please see the " \
-                         "list on the '{PLUGINS}' tab of '{FILE}' > '{SETTINGS}'. You should check if there is an " \
-                         "updated version available, else alert the developer that they need to update the code for " \
-                         "Python 3.x.\r\n\r\nYou can disable a plugin by renaming its folder to have '{DISABLED}' on " \
-                         "the end of the name."
-            popup_text = popup_text.replace('\n', '\\n')
-            popup_text = popup_text.replace('\r', '\\r')
-            # Now the string should match, so try translation
-            popup_text = _(popup_text)
-            # And substitute in the other words.
+            popup_text = _(
+                "One or more of your enabled plugins do not yet have support for Python 3.x. Please see the "
+                "list on the '{PLUGINS}' tab of '{FILE}' > '{SETTINGS}'. You should check if there is an "
+                "updated version available, else alert the developer that they need to update the code for "
+                r"Python 3.x.\r\n\r\nYou can disable a plugin by renaming its folder to have '{DISABLED}' on "
+                "the end of the name."
+            )
+
+            # Substitute in the other words.
+            # LANG: 'Plugins' tab / 'File' menu / 'File' > 'Settings'
             popup_text = popup_text.format(PLUGINS=_('Plugins'), FILE=_('File'), SETTINGS=_('Settings'),
                                            DISABLED='.disabled')
             # And now we do need these to be actual \r\n

@@ -1,3 +1,13 @@
+"""
+Code dealing with the configuration of the program.
+
+Windows uses the Registry to store values in a flat manner.
+Linux uses a file, but for commonality it's still a flat data structure.
+macOS uses a 'defaults' object.
+"""
+
+# spell-checker: words HKEY FOLDERID wchar wstring edcdhkey
+
 import abc
 import contextlib
 import functools
