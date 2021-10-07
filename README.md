@@ -1,4 +1,9 @@
 # EDD-EDMC
+
+For now, this tool is withdrawn until EDMC has a plug in interface definition that we can accurately follow.
+
+---
+
 EDD-EDMC plug in for using EDMC plugins with EDD/EDDLite
 
 EDD-EDMC allows you to use EDMC plugins in EDD or EDDLite.
