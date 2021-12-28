@@ -34,10 +34,17 @@ appcmdname = 'unused'
 # Major.Minor.Patch(-prerelease)(+buildmetadata)
 # NB: Do *not* import this, use the functions appversion() and appversion_nobuild()
 _static_appversion = '1.3.0'
+_edmc_compat_version = '5.1.3'
+_cached_version: Optional[semantic_version.Version] = None
 copyright = 'Copyright © 2016-2021 EDDiscovery development team'
 
 update_feed = 'unused'
 update_interval = 8*60*60
+# Providers marked to be in debug mode. Generally this is expected to switch to sending data to a log file
+debug_senders: List[str] = []
+# TRACE logging code that should actually be used.  Means not spamming it
+# *all* if only interested in some things.
+trace_on: List[str] = []
 
 # This must be done here in order to avoid an import cycle with EDMCLogging.
 # Other code should use EDMCLogging.get_main_logger
@@ -110,7 +117,7 @@ def git_shorthash_from_head() -> str:
         out, err = git_cmd.communicate()
 
     except Exception as e:
-        logger.error(f"Couldn't run git command for short hash: {e!r}")
+        logger.info(f"Couldn't run git command for short hash: {e!r}")
 
     else:
         shorthash = out.decode().rstrip('\n')
@@ -130,25 +137,33 @@ def git_shorthash_from_head() -> str:
     return shorthash
 
 
-def appversion() -> semantic_version.Version:
+def appversion(compat=True) -> semantic_version.Version:
     """
     Determine app version including git short hash if possible.
 
     :return: The augmented app version.
     """
-    if getattr(sys, 'frozen', False):
-        # Running frozen, so we should have a .gitversion file
-        # Yes, .parent because if frozen we're inside library.zip
-        with open(pathlib.Path(sys.path[0]).parent / GITVERSION_FILE, 'r', encoding='utf-8') as gitv:
-            shorthash = gitv.read()
-
+    if compat:
+        return semantic_version.Version(f'{_edmc_compat_version}')
     else:
-        # Running from source
-        shorthash = git_shorthash_from_head()
-        if shorthash is None:
-            shorthash = 'UNKNOWN'
+        global _cached_version
+        if _cached_version is not None:
+            return _cached_version
 
-    return semantic_version.Version(f'{_static_appversion}+{shorthash}')
+        if getattr(sys, 'frozen', False):
+            # Running frozen, so we should have a .gitversion file
+            # Yes, .parent because if frozen we're inside library.zip
+            with open(pathlib.Path(sys.path[0]).parent / GITVERSION_FILE, 'r', encoding='utf-8') as gitv:
+                shorthash = gitv.read()
+
+        else:
+            # Running from source
+            shorthash = git_shorthash_from_head()
+            if shorthash is None:
+                shorthash = 'UNKNOWN'
+
+        _cached_version = semantic_version.Version(f'{_static_appversion}+{shorthash}')
+        return _cached_version
 
 
 def appversion_nobuild() -> semantic_version.Version:
@@ -160,7 +175,7 @@ def appversion_nobuild() -> semantic_version.Version:
 
     :return: App version without any build meta data.
     """
-    return appversion().truncate('prerelease')
+    return appversion(False).truncate('prerelease')
 ###########################################################################
 
 
@@ -195,6 +210,8 @@ class AbstractConfig(abc.ABC):
     __in_shutdown = False  # Is the application currently shutting down ?
     __auth_force_localserver = False  # Should we use localhost for auth callback ?
     __auth_force_edmc_protocol = False  # Should we force edmc:// protocol ?
+    __eddn_url = None  # Non-default EDDN URL
+    __eddn_tracking_ui = False  # Show EDDN tracking UI ?
 
     def __init__(self) -> None:
         self.home_path = pathlib.Path.home()
@@ -237,6 +254,32 @@ class AbstractConfig(abc.ABC):
         :return: bool - True if we should use localhost web server.
         """
         return self.__auth_force_edmc_protocol
+
+    def set_eddn_url(self, eddn_url: str):
+        """Set the specified eddn URL."""
+        self.__eddn_url = eddn_url
+
+    @property
+    def eddn_url(self) -> Optional[str]:
+        """
+        Provide the custom EDDN URL.
+
+        :return: str - Custom EDDN URL to use.
+        """
+        return self.__eddn_url
+
+    def set_eddn_tracking_ui(self):
+        """Activate EDDN tracking UI."""
+        self.__eddn_tracking_ui = True
+
+    @property
+    def eddn_tracking_ui(self) -> bool:
+        """
+        Determine if the EDDN tracking UI be shown.
+
+        :return: bool - Should tracking UI be active?
+        """
+        return self.__eddn_tracking_ui
 
     @property
     def app_dir(self) -> str:
@@ -577,7 +620,7 @@ class WinConfig(AbstractConfig):
 
         Implements :meth:`AbstractConfig.get_bool`.
         """
-        res = self.get_int(key)
+        res = self.get_int(key, default=default)  # type: ignore
         if res is None:
             return default  # type: ignore # Yes it could be None, but we're _assuming_ that people gave us a default
 

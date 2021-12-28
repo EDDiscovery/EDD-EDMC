@@ -8,6 +8,7 @@ import locale
 import pathlib
 import re
 import sys
+import threading
 from builtins import object, str
 from os import chdir, environ
 from os.path import dirname, join, isdir
@@ -58,8 +59,7 @@ from EDMCLogging import edmclogger, logger, logging
 # isort: off
 if TYPE_CHECKING:
     from logging import TRACE  # type: ignore # noqa: F401 # Needed to update mypy
-    import update
-    # from infi.systray import SysTrayIcon
+    from infi.systray import SysTrayIcon
     # isort: on
 
     def _(x: str) -> str:
@@ -113,21 +113,22 @@ class Application(object):
 
         self.w = master
         self.w.title(appname)
+        self.minimizing = False
         self.w.rowconfigure(0, weight=1)
         self.w.columnconfigure(0, weight=1)
 
         self.prefsdialog = None
 
-        # if platform == 'win32':
-        #     from infi.systray import SysTrayIcon
+        if platform == 'win32':
+            from infi.systray import SysTrayIcon
 
-        #     def open_window(systray: 'SysTrayIcon') -> None:
-        #         self.w.deiconify()
+            def open_window(systray: 'SysTrayIcon') -> None:
+                self.w.deiconify()
 
-        #     menu_options = (("Open", None, open_window),)
-        #     # Method associated with on_quit is called whenever the systray is closing
-        #     self.systray = SysTrayIcon("EDMarketConnector.ico", applongname, menu_options, on_quit=self.exit_tray)
-        #     self.systray.start()
+            menu_options = (("Open", None, open_window),)
+            # Method associated with on_quit is called whenever the systray is closing
+            self.systray = SysTrayIcon("EDDEDMC.ico", applongname, menu_options, on_quit=self.exit_tray)
+            self.systray.start()
 
         plug.load_plugins(master)
 
@@ -195,19 +196,9 @@ class Application(object):
                 else:
                     appitem.grid(columnspan=2, sticky=tk.EW)
 
-        # Update button in main window
-        # self.button = ttk.Button(frame, text=_('Update'), width=28, default=tk.ACTIVE, state=tk.DISABLED)
-        # self.theme_button = tk.Label(frame, width=32 if platform == 'darwin' else 28, state=tk.DISABLED)
         self.status = tk.Label(frame, name='status', anchor=tk.W)
 
-        # ui_row = frame.grid_size()[1]
-        # self.button.grid(row=ui_row, columnspan=2, sticky=tk.NSEW)
-        # self.theme_button.grid(row=ui_row, columnspan=2, sticky=tk.NSEW)
-        # theme.register_alternate((self.button, self.theme_button, self.theme_button),
-        #                          {'row': ui_row, 'columnspan': 2, 'sticky': tk.NSEW})
         self.status.grid(columnspan=2, sticky=tk.EW)
-        # self.button.bind('<Button-1>', self.getandsend)
-        # theme.button_bind(self.theme_button, self.getandsend)
 
         for child in frame.winfo_children():
             child.grid_configure(padx=self.PADX, pady=(platform != 'win32' or isinstance(child, tk.Frame)) and 2 or 0)
@@ -218,117 +209,84 @@ class Application(object):
         self.newversion_button.grid_remove()
 
         self.menubar = tk.Menu()
-        if platform == 'darwin':
-            # Can't handle (de)iconify if topmost is set, so suppress iconify button
-            # http://wiki.tcl.tk/13428 and p15 of
-            # https://developer.apple.com/legacy/library/documentation/Carbon/Conceptual/HandlingWindowsControls/windowscontrols.pdf
-            root.call('tk::unsupported::MacWindowStyle', 'style', root, 'document', 'closeBox resizable')
+        self.file_menu = self.view_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
+        self.file_menu.add_command(command=lambda: prefs.PreferencesDialog(self.w, self.postprefs))
+        self.file_menu.add_separator()
+        self.file_menu.add_command(command=self.onexit)
+        self.menubar.add_cascade(menu=self.file_menu)
+        self.edit_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
+        self.edit_menu.add_command(accelerator='Ctrl+C', state=tk.DISABLED, command=self.copy)
+        self.menubar.add_cascade(menu=self.edit_menu)
+        self.help_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
+        self.help_menu.add_command(command=self.help_about)
 
-            # https://www.tcl.tk/man/tcl/TkCmd/menu.htm
-            self.system_menu = tk.Menu(self.menubar, name='apple')
-            self.system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
-            self.system_menu.add_command(command=lambda: self.updater.checkForUpdates())
+        self.menubar.add_cascade(menu=self.help_menu)
+        if platform == 'win32':
+            # Must be added after at least one "real" menu entry
+            self.always_ontop = tk.BooleanVar(value=bool(config.get_int('always_ontop')))
+            self.system_menu = tk.Menu(self.menubar, name='system', tearoff=tk.FALSE)
+            self.system_menu.add_separator()
+            # LANG: Appearance - Label for checkbox to select if application always on top
+            self.system_menu.add_checkbutton(label=_('Always on top'),
+                                             variable=self.always_ontop,
+                                             command=self.ontop_changed)  # Appearance setting
             self.menubar.add_cascade(menu=self.system_menu)
-            self.file_menu = tk.Menu(self.menubar, name='file')
-            self.file_menu.add_command(command=self.save_raw)
-            self.menubar.add_cascade(menu=self.file_menu)
-            self.edit_menu = tk.Menu(self.menubar, name='edit')
-            self.edit_menu.add_command(accelerator='Command-c', state=tk.DISABLED, command=self.copy)
-            self.menubar.add_cascade(menu=self.edit_menu)
-            self.w.bind('<Command-c>', self.copy)
-            # self.view_menu = tk.Menu(self.menubar, name='view')
-            # self.view_menu.add_command(command=lambda: stats.StatsDialog(self.w, self.status))
-            # self.menubar.add_cascade(menu=self.view_menu)
-            window_menu = tk.Menu(self.menubar, name='window')
-            self.menubar.add_cascade(menu=window_menu)
-            self.help_menu = tk.Menu(self.menubar, name='help')
-            self.help_menu.add_command(command=self.help_about)
-            self.menubar.add_cascade(menu=self.help_menu)
-            self.w['menu'] = self.menubar
-            # https://www.tcl.tk/man/tcl/TkCmd/tk_mac.htm
-            self.w.call('set', 'tk::mac::useCompatibilityMetrics', '0')
-            self.w.createcommand('tkAboutDialog', lambda: self.w.call('tk::mac::standardAboutPanel'))
-            self.w.createcommand("::tk::mac::Quit", self.onexit)
-            self.w.createcommand("::tk::mac::ShowPreferences", lambda: prefs.PreferencesDialog(self.w, self.postprefs))
-            self.w.createcommand("::tk::mac::ReopenApplication", self.w.deiconify)  # click on app in dock = restore
-            self.w.protocol("WM_DELETE_WINDOW", self.w.withdraw)  # close button shouldn't quit app
-            self.w.resizable(tk.FALSE, tk.FALSE)  # Can't be only resizable on one axis
-        else:
-            self.file_menu = self.view_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
-            # self.file_menu.add_command(command=lambda: stats.StatsDialog(self.w, self.status))
-            # self.file_menu.add_command(command=self.save_raw)
-            self.file_menu.add_command(command=lambda: prefs.PreferencesDialog(self.w, self.postprefs))
-            self.file_menu.add_separator()
-            self.file_menu.add_command(command=self.onexit)
-            self.menubar.add_cascade(menu=self.file_menu)
-            self.edit_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
-            self.edit_menu.add_command(accelerator='Ctrl+C', state=tk.DISABLED, command=self.copy)
-            self.menubar.add_cascade(menu=self.edit_menu)
-            self.help_menu = tk.Menu(self.menubar, tearoff=tk.FALSE)  # type: ignore
-            self.help_menu.add_command(command=self.help_about)
+        self.w.bind('<Control-c>', self.copy)
 
-            self.menubar.add_cascade(menu=self.help_menu)
-            if platform == 'win32':
-                # Must be added after at least one "real" menu entry
-                self.always_ontop = tk.BooleanVar(value=bool(config.get_int('always_ontop')))
-                self.system_menu = tk.Menu(self.menubar, name='system', tearoff=tk.FALSE)
-                self.system_menu.add_separator()
-                self.system_menu.add_checkbutton(label=_('Always on top'),
-                                                 variable=self.always_ontop,
-                                                 command=self.ontop_changed)  # Appearance setting
-                self.menubar.add_cascade(menu=self.system_menu)
-            self.w.bind('<Control-c>', self.copy)
-            self.w.protocol("WM_DELETE_WINDOW", self.onexit)
-            theme.register(self.menubar)  # menus and children aren't automatically registered
-            theme.register(self.file_menu)
-            theme.register(self.edit_menu)
-            theme.register(self.help_menu)
+        # Bind to the Default theme minimise button
+        self.w.bind("<Unmap>", self.default_iconify)
 
-            # Alternate title bar and menu for dark theme
-            self.theme_menubar = tk.Frame(frame)
-            self.theme_menubar.columnconfigure(2, weight=1)
-            theme_titlebar = tk.Label(self.theme_menubar, text=applongname,
-                                      image=self.theme_icon, cursor='fleur',
-                                      anchor=tk.W, compound=tk.LEFT)
-            theme_titlebar.grid(columnspan=3, padx=2, sticky=tk.NSEW)
-            self.drag_offset: Tuple[Optional[int], Optional[int]] = (None, None)
-            theme_titlebar.bind('<Button-1>', self.drag_start)
-            theme_titlebar.bind('<B1-Motion>', self.drag_continue)
-            theme_titlebar.bind('<ButtonRelease-1>', self.drag_end)
-            theme_minimize = tk.Label(self.theme_menubar, image=self.theme_minimize)
-            theme_minimize.grid(row=0, column=3, padx=2)
-            theme.button_bind(theme_minimize, self.oniconify, image=self.theme_minimize)
-            theme_close = tk.Label(self.theme_menubar, image=self.theme_close)
-            theme_close.grid(row=0, column=4, padx=2)
-            theme.button_bind(theme_close, self.onexit, image=self.theme_close)
-            self.theme_file_menu = tk.Label(self.theme_menubar, anchor=tk.W)
-            self.theme_file_menu.grid(row=1, column=0, padx=self.PADX, sticky=tk.W)
-            theme.button_bind(self.theme_file_menu,
-                              lambda e: self.file_menu.tk_popup(e.widget.winfo_rootx(),
-                                                                e.widget.winfo_rooty()
-                                                                + e.widget.winfo_height()))
-            self.theme_edit_menu = tk.Label(self.theme_menubar, anchor=tk.W)
-            self.theme_edit_menu.grid(row=1, column=1, sticky=tk.W)
-            theme.button_bind(self.theme_edit_menu,
-                              lambda e: self.edit_menu.tk_popup(e.widget.winfo_rootx(),
-                                                                e.widget.winfo_rooty()
-                                                                + e.widget.winfo_height()))
-            self.theme_help_menu = tk.Label(self.theme_menubar, anchor=tk.W)
-            self.theme_help_menu.grid(row=1, column=2, sticky=tk.W)
-            theme.button_bind(self.theme_help_menu,
-                              lambda e: self.help_menu.tk_popup(e.widget.winfo_rootx(),
-                                                                e.widget.winfo_rooty()
-                                                                + e.widget.winfo_height()))
-            tk.Frame(self.theme_menubar, highlightthickness=1).grid(columnspan=5, padx=self.PADX, sticky=tk.EW)
-            theme.register(self.theme_minimize)  # images aren't automatically registered
-            theme.register(self.theme_close)
-            self.blank_menubar = tk.Frame(frame)
-            tk.Label(self.blank_menubar).grid()
-            tk.Label(self.blank_menubar).grid()
-            tk.Frame(self.blank_menubar, height=2).grid()
-            theme.register_alternate((self.menubar, self.theme_menubar, self.blank_menubar),
-                                     {'row': 0, 'columnspan': 2, 'sticky': tk.NSEW})
-            self.w.resizable(tk.TRUE, tk.FALSE)
+        self.w.protocol("WM_DELETE_WINDOW", self.onexit)
+        theme.register(self.menubar)  # menus and children aren't automatically registered
+        theme.register(self.file_menu)
+        theme.register(self.edit_menu)
+        theme.register(self.help_menu)
+
+        # Alternate title bar and menu for dark theme
+        self.theme_menubar = tk.Frame(frame)
+        self.theme_menubar.columnconfigure(2, weight=1)
+        theme_titlebar = tk.Label(self.theme_menubar, text=applongname,
+                                  image=self.theme_icon, cursor='fleur',
+                                  anchor=tk.W, compound=tk.LEFT)
+        theme_titlebar.grid(columnspan=3, padx=2, sticky=tk.NSEW)
+        self.drag_offset: Tuple[Optional[int], Optional[int]] = (None, None)
+        theme_titlebar.bind('<Button-1>', self.drag_start)
+        theme_titlebar.bind('<B1-Motion>', self.drag_continue)
+        theme_titlebar.bind('<ButtonRelease-1>', self.drag_end)
+        theme_minimize = tk.Label(self.theme_menubar, image=self.theme_minimize)
+        theme_minimize.grid(row=0, column=3, padx=2)
+        theme.button_bind(theme_minimize, self.oniconify, image=self.theme_minimize)
+        theme_close = tk.Label(self.theme_menubar, image=self.theme_close)
+        theme_close.grid(row=0, column=4, padx=2)
+        theme.button_bind(theme_close, self.onexit, image=self.theme_close)
+        self.theme_file_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_file_menu.grid(row=1, column=0, padx=self.PADX, sticky=tk.W)
+        theme.button_bind(self.theme_file_menu,
+                          lambda e: self.file_menu.tk_popup(e.widget.winfo_rootx(),
+                                                            e.widget.winfo_rooty()
+                                                            + e.widget.winfo_height()))
+        self.theme_edit_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_edit_menu.grid(row=1, column=1, sticky=tk.W)
+        theme.button_bind(self.theme_edit_menu,
+                          lambda e: self.edit_menu.tk_popup(e.widget.winfo_rootx(),
+                                                            e.widget.winfo_rooty()
+                                                            + e.widget.winfo_height()))
+        self.theme_help_menu = tk.Label(self.theme_menubar, anchor=tk.W)
+        self.theme_help_menu.grid(row=1, column=2, sticky=tk.W)
+        theme.button_bind(self.theme_help_menu,
+                          lambda e: self.help_menu.tk_popup(e.widget.winfo_rootx(),
+                                                            e.widget.winfo_rooty()
+                                                            + e.widget.winfo_height()))
+        tk.Frame(self.theme_menubar, highlightthickness=1).grid(columnspan=5, padx=self.PADX, sticky=tk.EW)
+        theme.register(self.theme_minimize)  # images aren't automatically registered
+        theme.register(self.theme_close)
+        self.blank_menubar = tk.Frame(frame)
+        tk.Label(self.blank_menubar).grid()
+        tk.Label(self.blank_menubar).grid()
+        tk.Frame(self.blank_menubar, height=2).grid()
+        theme.register_alternate((self.menubar, self.theme_menubar, self.blank_menubar),
+                                 {'row': 0, 'columnspan': 2, 'sticky': tk.NSEW})
+        self.w.resizable(tk.TRUE, tk.FALSE)
 
         # update geometry
         if config.get_str('geometry'):
@@ -466,7 +424,9 @@ class Application(object):
         self.theme_edit_menu['text'] = _('Edit')  # LANG: 'Edit' menu title
         self.theme_help_menu['text'] = _('Help')  # LANG: 'Help' menu title
 
-        self.file_menu.entryconfigure(0, label=_('Settings'))  # LANG: File > Settings (Windows)
+        # File menu
+        self.file_menu.entryconfigure(0, label=_('Status'))  # LANG: File > Status
+        self.file_menu.entryconfigure(0, label=_('Settings'))  # LANG: File > Settings
         self.file_menu.entryconfigure(4, label=_('Exit'))  # LANG: File > Exit
 
         self.help_menu.entryconfigure(0, label=_("About {APP}").format(APP=applongname))  # LANG: Help > About App
@@ -491,15 +451,15 @@ class Application(object):
         :return:
         """
 
-        # if monitor.thread is None:
-        #     logger.debug('monitor.thread is None, assuming shutdown and returning')
-        #     return
+        if monitor.thread is None:
+            logger.debug('monitor.thread is None, assuming shutdown and returning')
+            return
 
-        while True:
+        while not monitor.event_queue.empty():
             entry = monitor.get_entry()
             if not entry:
                 # This is expected due to some monitor.py code that appends `None`
-                # logger.trace('No entry from monitor.get_entry()')
+                logger.trace_if('journal.queue', 'No entry from monitor.get_entry()')
                 return
 
             if entry['event'] == 'ExitProgram':
@@ -510,26 +470,33 @@ class Application(object):
             self.updatedetails(entry)
 
             self.w.update_idletasks()
-    
+
+            if monitor.mode == 'CQC' and entry['event']:
+                err = plug.notify_journal_entry_cqc(monitor.cmdr, monitor.is_beta, entry, monitor.state)
+                if err:
+                    self.status['text'] = err
+
+                return  # in CQC
+
             if not entry['event'] or not monitor.mode:
-                # logger.trace('Startup or in CQC, returning')
-                return  # Startup or in CQC
-    
+                logger.trace_if('journal.queue', 'Startup, returning')
+                return  # Startup
+
             if entry['event'] in ['StartUp', 'LoadGame'] and monitor.started:
                 logger.info('Startup or LoadGame event')
-    
+
                 # Can't start dashboard monitoring
                 if not dashboard.start(self.w, monitor.started):
                     logger.info("Can't start Status monitoring")
 
             # Export loadout
             if entry['event'] == 'Loadout' and not monitor.state['Captain'] \
-                    and config.getint('output') & config.OUT_SHIP:
+                    and config.get_int('output') & config.OUT_SHIP:
                 monitor.export_ship()
 
-            if entry['event'] == 'Harness-NewVersion':
-                self.newversion_button['text'] = '!! New version Available:' + entry['Version']
-                self.newversion_button.grid()
+            # if entry['event'] == 'Harness-NewVersion':
+            #     self.newversion_button['text'] = '!! New version Available:' + entry['Version']
+            #     self.newversion_button.grid()
                 # self.status['text'] = 'New version'
 
             # Plugins
@@ -559,12 +526,17 @@ class Application(object):
             }.get(role, role)
 
         if monitor.cmdr and monitor.state['Captain']:
-            self.cmdr['text'] = f'{monitor.cmdr} / {monitor.state["Captain"]}'
+            if not config.get_bool('hide_multicrew_captain', default=False):
+                self.cmdr['text'] = f'{monitor.cmdr} / {monitor.state["Captain"]}'
+
+            else:
+                self.cmdr['text'] = f'{monitor.cmdr}'
+
             self.ship_label['text'] = _('Role') + ':'  # LANG: Multicrew role label in main window
             self.ship.configure(state=tk.NORMAL, text=crewroletext(monitor.state['Role']), url=None)
 
         elif monitor.cmdr:
-            if monitor.group:
+            if monitor.group and not config.get_bool("hide_private_group", default=False):
                 self.cmdr['text'] = f'{monitor.cmdr} / {monitor.group}'
 
             else:
@@ -690,7 +662,7 @@ class Application(object):
 
     def help_about(self):
         tk.messagebox.showinfo(
-            f'EDD-EDMC: {appversion()}',
+            f'EDD-EDMC: {appversion(False)}',
                 "This program supports EDMC plugins for EDD/EDDLite\r\n\r\n"
                 "Install this program, then run it, then close the program\r\n"
                 "This installs the adaptors into EDD/EDDLite\r\n\r\n"
@@ -699,12 +671,18 @@ class Application(object):
 
             )
 
+    def exit_tray(self, systray: 'SysTrayIcon') -> None:
+        """Tray icon is shutting down."""
+        exit_thread = threading.Thread(target=self.onexit)
+        exit_thread.setDaemon(True)
+        exit_thread.start()
+
     def onexit(self, event=None) -> None:
         """Application shutdown procedure."""
-        # if platform == 'win32':
-        #     shutdown_thread = threading.Thread(target=self.systray.shutdown)
-        #     shutdown_thread.setDaemon(True)
-        #     shutdown_thread.start()
+        if platform == 'win32':
+            shutdown_thread = threading.Thread(target=self.systray.shutdown)
+            shutdown_thread.setDaemon(True)
+            shutdown_thread.start()
 
         config.set_shutdown()  # Signal we're in shutdown now.
 
@@ -756,9 +734,17 @@ class Application(object):
         """Handle end of window dragging."""
         self.drag_offset = (None, None)
 
+    def default_iconify(self, event=None) -> None:
+        """Handle the Windows default theme 'minimise' button."""
+        # If we're meant to "minimize to system tray" then hide the window so no taskbar icon is seen
+        if sys.platform == 'win32' and config.get_bool('minimize_system_tray'):
+            # This gets called for more than the root widget, so only react to that
+            if str(event.widget) == '.':
+                self.w.withdraw()
+
     def oniconify(self, event=None) -> None:
-        """Handle minimization of the application."""
-        self.w.overrideredirect(0)  # Can't iconize while overrideredirect
+        """Handle the minimize button on non-Default theme main window."""
+        self.w.overrideredirect(False)  # Can't iconize while overrideredirect
         self.w.iconify()
         self.w.update_idletasks()  # Size and windows styles get recalculated here
         self.w.wait_visibility()  # Need main window to be re-created before returning
@@ -810,7 +796,7 @@ Locale LC_TIME: {locale.getlocale(locale.LC_TIME)}'''
 
 # Run the app
 if __name__ == "__main__":  # noqa: C901
-    logger.info(f'Startup v{appversion()} : Running on Python v{sys.version}')
+    logger.info(f'Startup v{appversion(False)} : Running on Python v{sys.version}')
     logger.debug(f'''Platform: {sys.platform} {sys.platform == "win32" and sys.getwindowsversion()}
 argv[0]: {sys.argv[0]}
 exec_prefix: {sys.exec_prefix}
@@ -903,7 +889,7 @@ sys.path: {sys.path}'''
     # abinit = A.B()
 
     # Plain, not via `logger`
-    print(f'{applongname} {appversion()}')
+    print(f'{applongname} {appversion(False)}')
 
     Translations.install(config.get_str('language'))  # Can generate errors so wait til log set up
 
@@ -926,7 +912,7 @@ sys.path: {sys.path}'''
         ui_scale = 100
         config.set('ui_scale', ui_scale)
     theme.default_ui_scale = root.tk.call('tk', 'scaling')
-    logger.trace(f'Default tk scaling = {theme.default_ui_scale}')
+    logger.trace_if('tk', f'Default tk scaling = {theme.default_ui_scale}')
     theme.startup_ui_scale = ui_scale
     root.tk.call('tk', 'scaling', theme.default_ui_scale * float(ui_scale) / 100.0)
     app = Application(root)
@@ -935,6 +921,7 @@ sys.path: {sys.path}'''
         """Display message about plugins not updated for Python 3.x."""
         plugins_not_py3_last = config.get_int('plugins_not_py3_last', default=0)
         if (plugins_not_py3_last + 86400) < int(time()) and len(plug.PLUGINS_not_py3):
+            # LANG: Popup-text about 'active' plugins without Python 3.x support
             popup_text = _(
                 "One or more of your enabled plugins do not yet have support for Python 3.x. Please see the "
                 "list on the '{PLUGINS}' tab of '{FILE}' > '{SETTINGS}'. You should check if there is an "
@@ -944,14 +931,18 @@ sys.path: {sys.path}'''
             )
 
             # Substitute in the other words.
-            # LANG: 'Plugins' tab / 'File' menu / 'File' > 'Settings'
-            popup_text = popup_text.format(PLUGINS=_('Plugins'), FILE=_('File'), SETTINGS=_('Settings'),
-                                           DISABLED='.disabled')
+            popup_text = popup_text.format(
+                PLUGINS=_('Plugins'),  # LANG: Settings > Plugins tab
+                FILE=_('File'),  # LANG: 'File' menu
+                SETTINGS=_('Settings'),  # LANG: File > Settings
+                DISABLED='.disabled'
+            )
             # And now we do need these to be actual \r\n
             popup_text = popup_text.replace('\\n', '\n')
             popup_text = popup_text.replace('\\r', '\r')
 
             tk.messagebox.showinfo(
+                # LANG: Popup window title for list of 'enabled' plugins that don't work with Python 3.x
                 _('EDMC: Plugins Without Python 3.x Support'),
                 popup_text
             )

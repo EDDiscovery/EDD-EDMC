@@ -4,18 +4,14 @@
 Script to build to .exe and .msi package.
 
 .exe build is via py2exe on win32.
+.msi packaging utilises Windows SDK.
 """
 
-import codecs
 import os
-import platform
-import re
 import shutil
 import sys
 from distutils.core import setup
 from os.path import exists, isdir, join
-from tempfile import gettempdir
-from typing import Any, Generator, Set
 from config import (
     appcmdname, applongname, appname, appversion, appversion_nobuild, copyright, git_shorthash_from_head, update_feed,
     update_interval
@@ -49,11 +45,9 @@ else:
     assert False, f'Unsupported platform {sys.platform}'
 
 # Split version, as py2exe wants the 'base' for version
-semver = appversion()
+semver = appversion(False)
 appversion_str = str(semver)
 base_appversion = str(semver.truncate('patch'))
-
-print(f'Version: {base_appversion}')
 
 if dist_dir and len(dist_dir) > 1 and isdir(dist_dir):
     shutil.rmtree(dist_dir)
@@ -91,7 +85,6 @@ OPTIONS = {
             '_markerlib',
             'optparse',
             'PIL',
-            'pkg_resources',
             'simplejson',
             'unittest'
         ],
@@ -100,17 +93,9 @@ OPTIONS = {
 
 DATA_FILES = [
     ('', [
+        '.gitversion',  # Contains git short hash
         ICONAME,
         'EUROCAPS.TTF',
-        'commodity.csv',
-        'rare_commodity.csv',
-        'snd_good.wav',
-        'snd_bad.wav',
-        'modules.p',
-        'ships.p',
-        'stations.p',
-        'systems.p',
-        '%s/DLLs/sqlite3.dll' % (sys.base_prefix),
     ]),
     ('L10n', [join('L10n', x) for x in os.listdir('L10n') if x.endswith('.strings')]),
     ('plugins', PLUGINS),

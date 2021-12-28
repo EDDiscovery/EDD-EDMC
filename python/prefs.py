@@ -59,7 +59,7 @@ class PrefsVersion:
     def __init__(self):
         return
 
-    def stringToSerial(self, versionStr: str) -> int:  # noqa: N802 # used in plugins
+    def stringToSerial(self, versionStr: str) -> int:  # noqa: N802, N803 # used in plugins
         """
         Convert a version string into a preferences version serial number.
 
@@ -82,7 +82,6 @@ class PrefsVersion:
         :raises ValueError: on serial number after the current latest
         :return: bool indicating the answer
         """
-
         # config.get('PrefsVersion') is the version preferences we last saved for
         pv = config.get_int('PrefsVersion')
         # If no PrefsVersion yet exists then return oldTest
@@ -201,6 +200,8 @@ elif platform == 'win32':
     BrowseCallbackProc = ctypes.WINFUNCTYPE(ctypes.c_int, HWND, ctypes.c_uint, LPARAM, LPARAM)
 
     class BROWSEINFO(ctypes.Structure):
+        """Windows file browser fields."""
+
         _fields_ = [("hwndOwner", HWND), ("pidlRoot", LPVOID), ("pszDisplayName", LPWSTR), ("lpszTitle", LPCWSTR),
                     ("ulFlags", UINT), ("lpfn", BrowseCallbackProc), ("lParam", LPCWSTR), ("iImage", ctypes.c_int)]
 
@@ -244,7 +245,13 @@ class PreferencesDialog(tk.Toplevel):
 
         self.parent = parent
         self.callback = callback
-        self.title(_('Preferences') if platform == 'darwin' else _('Settings'))
+        if platform == 'darwin':
+            # LANG: File > Preferences menu entry for macOS
+            self.title(_('Preferences'))
+
+        else:
+            # LANG: File > Settings (macOS)
+            self.title(_('Settings'))
 
         if parent.winfo_viewable():
             self.transient(parent)
@@ -282,6 +289,7 @@ class PreferencesDialog(tk.Toplevel):
         self.__setup_output_tab(notebook)
         self.__setup_plugin_tabs(notebook)
         self.__setup_config_tab(notebook)
+        self.__setup_privacy_tab(notebook)
         self.__setup_appearance_tab(notebook)
         self.__setup_plugin_tab(notebook)
 
@@ -315,7 +323,7 @@ class PreferencesDialog(tk.Toplevel):
             GetWindowRect(GetParent(self.winfo_id()), position)
             if CalculatePopupWindowPosition(
                 POINT(parent.winfo_rootx(), parent.winfo_rooty()),
-                SIZE(position.right - position.left, position.bottom - position.top),
+                SIZE(position.right - position.left, position.bottom - position.top),  # type: ignore
                 0x10000, None, position
             ):
                 self.geometry(f"+{position.left}+{position.top}")
@@ -332,13 +340,14 @@ class PreferencesDialog(tk.Toplevel):
 
         row = AutoInc(start=1)
 
+        # LANG: Settings > Output - choosing what data to save to files
         self.out_label = nb.Label(output_frame, text=_('Please choose what data to save'))
         self.out_label.grid(columnspan=2, padx=self.PADX, sticky=tk.W, row=row.get())
 
         # self.out_csv = tk.IntVar(value=1 if (output & config.OUT_MKT_CSV) else 0)
         # self.out_csv_button = nb.Checkbutton(
         #     output_frame,
-        #     text=_('Market data in CSV format file'),
+        #     text=_('Market data in CSV format file'),  # LANG: Settings > Output option
         #     variable=self.out_csv,
         #     command=self.outvarchanged
         # )
@@ -347,7 +356,7 @@ class PreferencesDialog(tk.Toplevel):
         # self.out_td = tk.IntVar(value=1 if (output & config.OUT_MKT_TD) else 0)
         # self.out_td_button = nb.Checkbutton(
         #     output_frame,
-        #     text=_('Market data in Trade Dangerous format file'),
+        #     text=_('Market data in Trade Dangerous format file'),  # LANG: Settings > Output option
         #     variable=self.out_td,
         #     command=self.outvarchanged
         # )
@@ -357,7 +366,7 @@ class PreferencesDialog(tk.Toplevel):
         # Output setting
         self.out_ship_button = nb.Checkbutton(
             output_frame,
-            text=_('Ship loadout'),
+            text=_('Ship loadout'),  # LANG: Settings > Output option
             variable=self.out_ship,
             command=self.outvarchanged
         )
@@ -367,7 +376,7 @@ class PreferencesDialog(tk.Toplevel):
         # Output setting
         self.out_auto_button = nb.Checkbutton(
             output_frame,
-            text=_('Automatically update on docking'),
+            text=_('Automatically update on docking'),  # LANG: Settings > Output option
             variable=self.out_auto,
             command=self.outvarchanged
         )
@@ -375,7 +384,7 @@ class PreferencesDialog(tk.Toplevel):
 
         self.outdir = tk.StringVar()
         self.outdir.set(str(config.get_str('outdir')))
-        # LANG: Label for "where files are located"
+        # LANG: Settings > Output - Label for "where files are located"
         self.outdir_label = nb.Label(output_frame, text=_('File location')+':')  # Section heading in settings
         # Type ignored due to incorrect type annotation. a 2 tuple does padding for each side
         self.outdir_label.grid(padx=self.PADX, pady=(5, 0), sticky=tk.W, row=row.get())  # type: ignore
@@ -383,16 +392,25 @@ class PreferencesDialog(tk.Toplevel):
         self.outdir_entry = nb.Entry(output_frame, takefocus=False)
         self.outdir_entry.grid(columnspan=2, padx=self.PADX, pady=(0, self.PADY), sticky=tk.EW, row=row.get())
 
+        if platform == 'darwin':
+            text = (_('Change...'))  # LANG: macOS Preferences - files location selection button
+
+        else:
+            text = (_('Browse...'))  # LANG: NOT-macOS Settings - files location selection button
+
         self.outbutton = nb.Button(
             output_frame,
-            text=(_('Change...') if platform == 'darwin' else _('Browse...')),
+            text=text,
+            # Technically this is different from the label in Settings > Output, as *this* is used
+            # as the title of the popup folder selection window.
+            # LANG: Settings > Output - Label for "where files are located"
             command=lambda: self.filebrowse(_('File location'), self.outdir)
         )
         self.outbutton.grid(column=1, padx=self.PADX, pady=self.PADY, sticky=tk.NSEW, row=row.get())
 
         nb.Frame(output_frame).grid(row=row.get())  # bottom spacer # TODO: does nothing?
 
-        # LANG: Label for 'Output' Settings tab
+        # LANG: Label for 'Output' Settings/Preferences tab
         root_notebook.add(output_frame, text=_('Output'))  # Tab heading in settings
 
     def __setup_plugin_tabs(self, notebook: Notebook) -> None:
@@ -401,7 +419,7 @@ class PreferencesDialog(tk.Toplevel):
             if plugin_frame:
                 notebook.add(plugin_frame, text=plugin.name)
 
-    def __setup_config_tab(self, notebook: Notebook) -> None:
+    def __setup_config_tab(self, notebook: Notebook) -> None:  # noqa: CCR001
         config_frame = nb.Frame(notebook)
         config_frame.columnconfigure(1, weight=1)
         row = AutoInc(start=1)
@@ -453,6 +471,7 @@ class PreferencesDialog(tk.Toplevel):
                 value=str(system_provider if system_provider in plug.provides('system_url') else 'EDSM')
             )
 
+            # LANG: Configuration - Label for selection of 'System' provider website
             nb.Label(config_frame, text=_('System')).grid(padx=self.PADX, pady=2*self.PADY, sticky=tk.W, row=cur_row)
             self.system_button = nb.OptionMenu(
                 config_frame,
@@ -470,6 +489,7 @@ class PreferencesDialog(tk.Toplevel):
                 value=str(station_provider if station_provider in plug.provides('station_url') else 'eddb')
             )
 
+            # LANG: Configuration - Label for selection of 'Station' provider website
             nb.Label(config_frame, text=_('Station')).grid(padx=self.PADX, pady=2*self.PADY, sticky=tk.W, row=cur_row)
             self.station_button = nb.OptionMenu(
                 config_frame,
@@ -490,6 +510,7 @@ class PreferencesDialog(tk.Toplevel):
             # Set the current loglevel
             nb.Label(
                 config_frame,
+                # LANG: Configuration - Label for selection of Log Level
                 text=_('Log Level')
             ).grid(padx=self.PADX, pady=2*self.PADY, sticky=tk.W, row=cur_row)
 
@@ -520,13 +541,35 @@ class PreferencesDialog(tk.Toplevel):
         # LANG: Label for 'Configuration' tab in Settings
         notebook.add(config_frame, text=_('Configuration'))
 
+    def __setup_privacy_tab(self, notebook: Notebook) -> None:
+        frame = nb.Frame(notebook)
+        self.hide_multicrew_captain = tk.BooleanVar(value=config.get_bool('hide_multicrew_captain', default=False))
+        self.hide_private_group = tk.BooleanVar(value=config.get_bool('hide_private_group', default=False))
+        row = AutoInc()
+
+        # LANG: UI elements privacy section header in privacy tab of preferences
+        nb.Label(frame, text=_('Main UI privacy options')).grid(
+            row=row.get(), column=0, sticky=tk.W, padx=self.PADX, pady=self.PADY
+        )
+
+        nb.Checkbutton(
+            frame, text=_('Hide private group name in UI'),  # LANG: Hide private group owner name from UI checkbox
+            variable=self.hide_private_group
+        ).grid(row=row.get(), column=0, padx=self.PADX, pady=self.PADY)
+        nb.Checkbutton(
+            frame, text=_('Hide multi-crew captain name'),  # LANG: Hide multicrew captain name from main UI checkbox
+            variable=self.hide_multicrew_captain
+        ).grid(row=row.get(), column=0, padx=self.PADX, pady=self.PADY)
+
+        notebook.add(frame, text=_('Privacy'))  # LANG: Preferences privacy tab title
+
     def __setup_appearance_tab(self, notebook: Notebook) -> None:
         self.languages = Translations.available_names()
         # Appearance theme and language setting
         # LANG: The system default language choice in Settings > Appearance
         self.lang = tk.StringVar(value=self.languages.get(config.get_str('language'), _('Default')))
         self.always_ontop = tk.BooleanVar(value=bool(config.get_int('always_ontop')))
-        # self.minimize_system_tray = tk.BooleanVar(value=config.get_bool('minimize_system_tray'))
+        self.minimize_system_tray = tk.BooleanVar(value=config.get_bool('minimize_system_tray'))
         self.theme = tk.IntVar(value=config.get_int('theme'))
         self.theme_colors = [config.get_str('dark_text'), config.get_str('dark_highlight')]
         self.theme_prompts = [
@@ -541,6 +584,7 @@ class PreferencesDialog(tk.Toplevel):
         appearance_frame = nb.Frame(notebook)
         appearance_frame.columnconfigure(2, weight=1)
         with row as cur_row:
+            # LANG: Appearance - Label for selection of application display language
             nb.Label(appearance_frame, text=_('Language')).grid(padx=self.PADX, sticky=tk.W, row=cur_row)
             self.lang_button = nb.OptionMenu(appearance_frame, self.lang, self.lang.get(), *self.languages.values())
             self.lang_button.grid(column=1, columnspan=2, padx=self.PADX, sticky=tk.W, row=cur_row)
@@ -582,6 +626,7 @@ class PreferencesDialog(tk.Toplevel):
             # Main window
             self.theme_button_0 = nb.ColoredButton(
                 appearance_frame,
+                # LANG: Appearance - Example 'Normal' text
                 text=_('Station'),
                 background='grey4',
                 command=lambda: self.themecolorbrowse(0)
@@ -613,6 +658,7 @@ class PreferencesDialog(tk.Toplevel):
             columnspan=4, padx=self.PADX, pady=self.PADY*4, sticky=tk.EW, row=row.get()
         )
         with row as cur_row:
+            # LANG: Appearance - Label for selection of UI scaling
             nb.Label(appearance_frame, text=_('UI Scale Percentage')).grid(
                 padx=self.PADX, pady=2*self.PADY, sticky=tk.W, row=cur_row
             )
@@ -621,7 +667,7 @@ class PreferencesDialog(tk.Toplevel):
             self.ui_scale.set(config.get_int('ui_scale'))
             self.uiscale_bar = tk.Scale(
                 appearance_frame,
-                variable=self.ui_scale,  # TODO: intvar, but annotated as DoubleVar
+                variable=self.ui_scale,  # type: ignore # TODO: intvar, but annotated as DoubleVar
                 orient=tk.HORIZONTAL,
                 length=300 * (float(theme.startup_ui_scale) / 100.0 * theme.default_ui_scale),  # type: ignore # runtime
                 from_=0,
@@ -633,6 +679,7 @@ class PreferencesDialog(tk.Toplevel):
             self.uiscale_bar.grid(column=1, sticky=tk.W, row=cur_row)
             self.ui_scaling_defaultis = nb.Label(
                 appearance_frame,
+                # LANG: Appearance - Help/hint text for UI scaling selection
                 text=_('100 means Default{CR}Restart Required for{CR}changes to take effect!')
             ).grid(column=3, padx=self.PADX, pady=2*self.PADY, sticky=tk.E, row=cur_row)
 
@@ -642,6 +689,7 @@ class PreferencesDialog(tk.Toplevel):
         )
 
         with row as cur_row:
+            # LANG: Appearance - Label for selection of main window transparency
             nb.Label(appearance_frame, text=_("Main window transparency")).grid(
                 padx=self.PADX, pady=self.PADY*2, sticky=tk.W, row=cur_row
             )
@@ -661,6 +709,7 @@ class PreferencesDialog(tk.Toplevel):
 
             nb.Label(
                 appearance_frame,
+                # LANG: Appearance - Help/hint text for Main window transparency selection
                 text=_(
                     "100 means fully opaque.{CR}"
                     "Window is updated in real time"
@@ -682,26 +731,28 @@ class PreferencesDialog(tk.Toplevel):
 
         self.ontop_button = nb.Checkbutton(
             appearance_frame,
+            # LANG: Appearance - Label for checkbox to select if application always on top
             text=_('Always on top'),
             variable=self.always_ontop,
             command=self.themevarchanged
         )
         self.ontop_button.grid(columnspan=3, padx=self.BUTTONX, sticky=tk.W, row=row.get())  # Appearance setting
 
-        # if platform == 'win32':
-        #     nb.Checkbutton(
-        #         appearance_frame,
-        #         text=_('Minimize to system tray'),
-        #         variable=self.minimize_system_tray,
-        #         command=self.themevarchanged
-        #     ).grid(columnspan=3, padx=self.BUTTONX, sticky=tk.W, row=row.get())  # Appearance setting
+        if platform == 'win32':
+            nb.Checkbutton(
+                appearance_frame,
+                # LANG: Appearance option for Windows "minimize to system tray"
+                text=_('Minimize to system tray'),
+                variable=self.minimize_system_tray,
+                command=self.themevarchanged
+            ).grid(columnspan=3, padx=self.BUTTONX, sticky=tk.W, row=row.get())  # Appearance setting
 
         nb.Label(appearance_frame).grid(sticky=tk.W)  # big spacer
 
         # LANG: Label for Settings > Appearance tab
         notebook.add(appearance_frame, text=_('Appearance'))  # Tab heading in settings
 
-    def __setup_plugin_tab(self, notebook: Notebook) -> None:
+    def __setup_plugin_tab(self, notebook: Notebook) -> None:  # noqa: CCR001
         # Plugin settings and info
         plugins_frame = nb.Frame(notebook)
         plugins_frame.columnconfigure(0, weight=1)
@@ -759,6 +810,7 @@ class PreferencesDialog(tk.Toplevel):
             ttk.Separator(plugins_frame, orient=tk.HORIZONTAL).grid(
                 columnspan=3, padx=self.PADX, pady=self.PADY * 8, sticky=tk.EW, row=row.get()
             )
+            # LANG: Plugins - Label for list of 'enabled' plugins that don't work with Python 3.x
             nb.Label(plugins_frame, text=_('Plugins Without Python 3.x Support:')+':').grid(padx=self.PADX, sticky=tk.W)
 
             for plugin in plug.PLUGINS_not_py3:
@@ -766,9 +818,10 @@ class PreferencesDialog(tk.Toplevel):
                     nb.Label(plugins_frame, text=plugin.name).grid(columnspan=2, padx=self.PADX*2, sticky=tk.W)
 
             HyperlinkLabel(
+                # LANG: Plugins - Label on URL to documentation about migrating plugins from Python 2.7
                 plugins_frame, text=_('Information on migrating plugins'),
                 background=nb.Label().cget('background'),
-                url='https://github.com/EDCD/EDMarketConnector/blob/main/PLUGINS.md#migration-to-python-37',
+                url='https://github.com/EDCD/EDMarketConnector/blob/main/PLUGINS.md#migration-from-python-27',
                 underline=True
             ).grid(columnspan=2, padx=self.PADX, sticky=tk.W)
         ############################################################
@@ -810,6 +863,7 @@ class PreferencesDialog(tk.Toplevel):
         self.cmdrchanged_alarm = self.after(1000, self.cmdrchanged)
 
     def tabchanged(self, event: tk.Event) -> None:
+        """Handle preferences active tab changing."""
         self.outvarchanged()
         if platform == 'darwin':
             # Hack to recompute size so that buttons show up under Mojave
@@ -821,23 +875,14 @@ class PreferencesDialog(tk.Toplevel):
             temp.destroy()
 
     def outvarchanged(self, event: Optional[tk.Event] = None) -> None:
+        """Handle Output tab variable changes."""
         self.displaypath(self.outdir, self.outdir_entry)
         self.displaypath(self.logdir, self.logdir_entry)
-
-        logdir = self.logdir.get()
-        logvalid = exists(logdir) if logdir else False
 
         self.out_label['state'] = tk.NORMAL
         # self.out_csv_button['state'] = tk.NORMAL
         # self.out_td_button['state'] = tk.NORMAL
         self.out_ship_button['state'] = tk.NORMAL
-
-        # local = any((self.out_td.get(), self.out_csv.get(), self.out_ship.get()))
-        local = self.out_ship.get()
-        self.out_auto_button['state'] = tk.NORMAL if local and logvalid else tk.DISABLED
-        self.outdir_label['state'] = tk.NORMAL if local else tk.DISABLED
-        self.outbutton['state'] = tk.NORMAL if local else tk.DISABLED
-        self.outdir_entry['state'] = tk.NORMAL if local else tk.DISABLED
 
     def filebrowse(self, title, pathvar):
         """
@@ -853,13 +898,13 @@ class PreferencesDialog(tk.Toplevel):
         from sys import platform as sys_platform
         directory = None
         if sys_platform == 'win32' and current_locale[1] not in ('utf8', 'UTF8', 'utf-8', 'UTF-8'):
-            def browsecallback(hwnd, uMsg, lParam, lpData):
+            def browsecallback(hwnd, uMsg, lParam, lpData):  # noqa: N803 # Windows API convention
                 # set initial folder
                 if uMsg == BFFM_INITIALIZED and lpData:
                     ctypes.windll.user32.SendMessageW(hwnd, BFFM_SETSELECTION, 1, lpData)
                 return 0
 
-            browseInfo = BROWSEINFO()
+            browseInfo = BROWSEINFO()  # noqa: N806 # Windows convention
             browseInfo.lpszTitle = title
             browseInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI
             browseInfo.lpfn = BrowseCallbackProc(browsecallback)
@@ -903,7 +948,7 @@ class PreferencesDialog(tk.Toplevel):
             display = []
             components = normpath(pathvar.get()).split('\\')
             buf = ctypes.create_unicode_buffer(MAX_PATH)
-            pidsRes = ctypes.c_int()
+            pidsRes = ctypes.c_int()  # noqa: N806 # Windows convention
             for i in range(start, len(components)):
                 try:
                     if (not SHGetLocalizedName('\\'.join(components[:i+1]), buf, MAX_PATH, ctypes.byref(pidsRes)) and
@@ -1012,10 +1057,14 @@ class PreferencesDialog(tk.Toplevel):
         config.set('language', lang_codes.get(self.lang.get()) or '')  # or '' used here due to Default being None above
         Translations.install(config.get_str('language', default=None))  # type: ignore # This sets self in weird ways.
 
+        # Privacy options
+        config.set('hide_private_group', self.hide_private_group.get())
+        config.set('hide_multicrew_captain', self.hide_multicrew_captain.get())
+
         config.set('ui_scale', self.ui_scale.get())
         config.set('ui_transparency', self.transparency.get())
         config.set('always_ontop', self.always_ontop.get())
-        # config.set('minimize_system_tray', self.minimize_system_tray.get())
+        config.set('minimize_system_tray', self.minimize_system_tray.get())
         config.set('theme', self.theme.get())
         config.set('dark_text', self.theme_colors[0])
         config.set('dark_highlight', self.theme_colors[1])
