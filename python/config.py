@@ -34,7 +34,7 @@ appcmdname = 'unused'
 # Major.Minor.Patch(-prerelease)(+buildmetadata)
 # NB: Do *not* import this, use the functions appversion() and appversion_nobuild()
 _static_appversion = '1.3.0'
-_edmc_compat_version = '5.1.3'
+_edmc_compat_version = '5.2.4'
 _cached_version: Optional[semantic_version.Version] = None
 copyright = 'Copyright © 2016-2021 EDDiscovery development team'
 
