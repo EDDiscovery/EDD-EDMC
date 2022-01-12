@@ -279,53 +279,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # Seek to the end of the latest log file
         log_pos = -1  # make this bound, but with something that should go bang if its misused
         logfile = self.logfile
-        if logfile:
+        if logfile and 'stored' in logfile:
             loghandle: BinaryIO = open(logfile, 'rb', 0)  # unbuffered
 
             for line in loghandle:
                 try:
-                    if 'stored' in logfile:
-                        logger.info(f'Stored Line {line}')
-                        entry = self.parse_entry(line)  # stored ones are parsed now for state update
-
-                        if entry['event'] == 'Harness-NewVersion':  # send this thru to the foreground for processing
-                            self.event_queue.put(line)
-                            self.root.event_generate('<<JournalEvent>>', when="tail")
-
-                        elif entry['event'] == 'Location' or entry['event'] == 'FSDJump':  # for now, not going to do anything with this, but may feed it thru if required later
-                            self.lastloc = entry
-
-                        elif entry['event'] == 'RefreshOver':  # its stored, and we have a refresh over, its the end of the refresh cycle.
-                            if not (self.lastloc is None):
-                                logger.info("Send a Startup as we have a location")
-                                entry = OrderedDict([
-                                    ('timestamp', strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())),
-                                    ('event', 'StartUp'),
-                                    ('StarSystem', self.system),
-                                    ('StarPos', self.coordinates),
-                                    ('SystemAddress', self.systemaddress),
-                                    ('Population', self.systempopulation),
-                                ])
-                                if self.planet:
-                                    entry['Body'] = self.planet
-                                entry['Docked'] = bool(self.station)
-                                if self.station:
-                                    entry['StationName'] = self.station
-                                    entry['StationType'] = self.stationtype
-                                    entry['MarketID'] = self.station_marketid
-
-                                self.event_queue.put(json.dumps(entry, separators=(', ', ':')))
-
-                                current = join(config.app_dir, "current.edd")
-                                if os.path.exists(current):
-                                    self.logfile = current
-                            else:
-                                logger.info("No location, send a None")
-                                self.event_queue.put(None)  # Generate null event to update the display (with possibly out-of-date info)
-
-                            self.root.event_generate('<<JournalEvent>>',
-                                                     when="tail")  # generate an event for the foreground
-
+                    self.parse_stored(line)
                 except Exception as ex:
                     logger.debug(f'Invalid journal entry:\n{line!r}\n', exc_info=ex)
 
@@ -346,18 +305,15 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 loghandle.seek(0, SEEK_END)		  # required to make macOS notice log change over SMB
                 loghandle.seek(log_pos, SEEK_SET)  # reset EOF flag # TODO: log_pos reported as possibly unbound
                 for line in loghandle:
-                    # Paranoia check to see if we're shutting down
-                    if threading.current_thread() != self.thread:
-                        logger.info("We're not meant to be running, exiting...")
-                        return  # Terminate
-
-                    if b'"event":"Continue"' in line:
-                        for _ in range(10):
-                            logger.trace_if('journal.continuation', "****")
-                        logger.trace_if('journal.continuation', 'Found a Continue event, its being added to the list, '
-                                        'we will finish this file up and then continue with the next')
-
-                    self.event_queue.put(line)
+                    if 'stored' in logfile:
+                        self.parse_stored(line)
+                    else:
+                        # Paranoia check to see if we're shutting down
+                        if threading.current_thread() != self.thread:
+                            logger.info("We're not meant to be running, exiting...")
+                            return  # Terminate
+    
+                        self.event_queue.put(line)
 
                 if not self.event_queue.empty():
                     if not config.shutting_down:
@@ -389,6 +345,48 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
                 return  # Terminate
 
+    def parse_stored(self, line: bytes) -> None:
+        entry = self.parse_entry(line)  # stored ones are parsed now for state update
+
+        if entry['event'] == 'Harness-NewVersion':  # send this thru to the foreground for processing
+            self.event_queue.put(line)
+            self.root.event_generate('<<JournalEvent>>', when="tail")
+
+        elif entry['event'] == 'Location' or entry[
+            'event'] == 'FSDJump':  # for now, not going to do anything with this, but may feed it thru if required later
+            self.lastloc = entry
+
+        elif entry['event'] == 'RefreshOver':  # its stored, and we have a refresh over, its the end of the refresh cycle.
+            if not (self.lastloc is None):
+                logger.info("Send a Startup as we have a location")
+                entry = OrderedDict([
+                    ('timestamp', strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())),
+                    ('event', 'StartUp'),
+                    ('StarSystem', self.system),
+                    ('StarPos', self.coordinates),
+                    ('SystemAddress', self.systemaddress),
+                    ('Population', self.systempopulation),
+                ])
+                if self.planet:
+                    entry['Body'] = self.planet
+                entry['Docked'] = bool(self.station)
+                if self.station:
+                    entry['StationName'] = self.station
+                    entry['StationType'] = self.stationtype
+                    entry['MarketID'] = self.station_marketid
+
+                self.event_queue.put(json.dumps(entry, separators=(', ', ':')))
+            else:
+                logger.info("No location, send a None")
+                self.event_queue.put(None)  # Generate null event to update the display (with possibly out-of-date info)
+
+            self.root.event_generate('<<JournalEvent>>',
+                                     when="tail")  # generate an event for the foreground
+
+            current = join(config.app_dir, "current.edd")
+            if os.path.exists(current):
+                self.logfile = current
+
     # Direct from EDMC, synced 14 June 2021 with 713b6b753d40cb3d3e2af1be0f3623298087a85f
 
     def parse_entry(self, line: bytes) -> MutableMapping[str, Any]:  # noqa: C901, CCR001
@@ -414,27 +412,33 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             event_type = entry['event'].lower()
             if event_type == 'fileheader':
                 self.live = False
-
-                self.cmdr = None
-                self.mode = None
-                self.group = None
-                self.planet = None
-                self.system = None
-                self.station = None
-                self.station_marketid = None
-                self.stationtype = None
-                self.stationservices = None
-                self.coordinates = None
-                self.systemaddress = None
-                self.started = None
-                self.__init_state()
-
                 # Do this AFTER __init_state() lest our nice new state entries be None
                 self.populate_version_info(entry)
 
             elif event_type == 'commander':
                 self.live = True  # First event in 3.0
-                self.cmdr = entry['Name']
+                if self.cmdr != entry['Name']:
+                    self.cmdr = entry['Name']
+                    self.mode = None
+                    self.group = None
+                    self.planet = None
+                    self.system = None
+                    self.station = None
+                    self.station_marketid = None
+                    self.stationtype = None
+                    self.stationservices = None
+                    self.coordinates = None
+                    self.systemaddress = None
+                    self.started = None
+                    lang = self.state['GameLanguage']
+                    version = self.state['GameVersion']
+                    build = self.state['GameBuild']
+                    self.__init_state()
+                    self.state['GameLanguage'] = lang
+                    self.state['GameVersion'] = version
+                    self.state['GameBuild'] = build
+                    self.version = self.state['GameVersion']
+                    self.is_beta = any(v in self.version.lower() for v in ('alpha', 'beta'))  # type: ignore
                 self.state['FID'] = entry['FID']
                 logger.trace_if(STARTUP, f'"Commander" event, {monitor.cmdr=}, {monitor.state["FID"]=}')
 
