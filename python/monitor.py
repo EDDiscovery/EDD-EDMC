@@ -59,7 +59,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
     _POLL = 1		# Polling is cheap, so do it often
     _RE_CANONICALISE = re.compile(r'\$(.+)_name;')
     _RE_CATEGORY = re.compile(r'\$MICRORESOURCE_CATEGORY_(.+);')
-    _RE_LOGFILE = re.compile(r'^.*\.edd$')
+    _RE_LOGFILE = re.compile(r'^(stored|current)\.edd$')
     _RE_SHIP_ONFOOT = re.compile(r'^(FlightSuit|UtilitySuit_Class.|TacticalSuit_Class.|ExplorationSuit_Class.)$')
 
     def __init__(self) -> None:
