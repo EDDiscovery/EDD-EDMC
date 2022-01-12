@@ -82,8 +82,6 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # If 3 we need to inject a special 'StartUp' event since consumers won't see the LoadGame event.
         self.live = False
 
-        self.game_was_running = False  # For generation of the "ShutDown" event
-
         # Context for journal handling
         self.version: Optional[str] = None
         self.is_beta = False
@@ -170,7 +168,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         logger.debug('Begin...')
         self.root = root  # type: ignore
         self.currentdir = config.app_dir
-        
+
         stored = join(config.app_dir, "stored.edd")
         if os.path.exists(stored):
             self.logfile = stored
@@ -277,7 +275,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # event_generate() is the only safe way to poke the main thread from this thread:
         # https://mail.python.org/pipermail/tkinter-discuss/2013-November/003522.html
 
-        logger.debug(f'Starting on logfile "{self.logfile}"')
+        logger.debug(f'Parsing "{self.logfile}"')
         # Seek to the end of the latest log file
         log_pos = -1  # make this bound, but with something that should go bang if its misused
         logfile = self.logfile
@@ -286,91 +284,6 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
             for line in loghandle:
                 try:
-                    if b'"event":"Location"' in line:
-                        logger.trace_if('journal.locations', '"Location" event in the past at startup')
-
-                    self.parse_entry(line)  # Some events are of interest even in the past
-
-                except Exception as ex:
-                    logger.debug(f'Invalid journal entry:\n{line!r}\n', exc_info=ex)
-
-            log_pos = loghandle.tell()
-
-        else:
-            loghandle = None  # type: ignore
-
-        logger.debug('Now at end of latest file.')
-
-        self.game_was_running = self.game_running()
-
-        if self.live:
-            if self.game_was_running:
-                # Game is running locally
-                entry: OrderedDictT[str, Any] = OrderedDict([
-                    ('timestamp', strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())),
-                    ('event', 'StartUp'),
-                    ('StarSystem', self.system),
-                    ('StarPos', self.coordinates),
-                    ('SystemAddress', self.systemaddress),
-                    ('Population', self.systempopulation),
-                ])
-
-                if self.planet:
-                    entry['Body'] = self.planet
-
-                entry['Docked'] = bool(self.station)
-
-                if self.station:
-                    entry['StationName'] = self.station
-                    entry['StationType'] = self.stationtype
-                    entry['MarketID'] = self.station_marketid
-
-                self.event_queue.put(json.dumps(entry, separators=(', ', ':')))
-
-            else:
-                # Generate null event to update the display (with possibly out-of-date info)
-                self.event_queue.put(None)
-                self.live = False
-
-        # Watchdog thread -- there is a way to get this by using self.observer.emitters and checking for an attribute:
-        # watch, but that may have unforseen differences in behaviour.
-        emitter = self.observed and self.observer._emitter_for_watch[self.observed]  # Note: Uses undocumented attribute
-
-        logger.debug('Entering loop...')
-        while True:
-
-            # Check whether new log file started, e.g. client (re)started.
-            if emitter and emitter.is_alive():
-                newlogfile = self.logfile  # updated by on_created watchdog callback
-            else:
-                # Poll
-                try:
-                    logfiles = sorted(
-                        (x for x in listdir(self.currentdir) if self._RE_LOGFILE.search(x)),
-                        key=lambda x: x.split('.')[1:]
-                    )
-
-                    newlogfile = join(self.currentdir, logfiles[-1]) if logfiles else None  # type: ignore
-
-                except Exception:
-                    logger.exception('Failed to find latest logfile')
-                    newlogfile = None
-
-            if logfile:
-                loghandle.seek(0, SEEK_END)		  # required to make macOS notice log change over SMB
-                loghandle.seek(log_pos, SEEK_SET)  # reset EOF flag # TODO: log_pos reported as possibly unbound
-                for line in loghandle:
-                    # Paranoia check to see if we're shutting down
-                    if threading.current_thread() != self.thread:
-                        logger.info("We're not meant to be running, exiting...")
-                        return  # Terminate
-
-                    if b'"event":"Continue"' in line:
-                        for _ in range(10):
-                            logger.trace_if('journal.continuation', "****")
-                        logger.trace_if('journal.continuation', 'Found a Continue event, its being added to the list, '
-                                        'we will finish this file up and then continue with the next')
-
                     if 'stored' in logfile:
                         logger.info(f'Stored Line {line}')
                         entry = self.parse_entry(line)  # stored ones are parsed now for state update
@@ -402,6 +315,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                                     entry['MarketID'] = self.station_marketid
 
                                 self.event_queue.put(json.dumps(entry, separators=(', ', ':')))
+
+                                current = join(config.app_dir, "current.edd")
+                                if os.path.exists(current):
+                                    self.logfile = current
                             else:
                                 logger.info("No location, send a None")
                                 self.event_queue.put(None)  # Generate null event to update the display (with possibly out-of-date info)
@@ -409,11 +326,38 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                             self.root.event_generate('<<JournalEvent>>',
                                                      when="tail")  # generate an event for the foreground
 
-                    self.event_queue.put(line)
+                except Exception as ex:
+                    logger.debug(f'Invalid journal entry:\n{line!r}\n', exc_info=ex)
 
-                current = join(config.app_dir, "current.edd")
-                if os.path.exists(current):
-                    newlogfile = current
+            log_pos = loghandle.tell()
+        else:
+            loghandle = None  # type: ignore
+
+        # Watchdog thread -- there is a way to get this by using self.observer.emitters and checking for an attribute:
+        # watch, but that may have unforseen differences in behaviour.
+        emitter = self.observed and self.observer._emitter_for_watch[self.observed]  # Note: Uses undocumented attribute
+
+        logger.debug('Entering loop...')
+        while True:
+
+            newlogfile = self.logfile
+
+            if logfile:
+                loghandle.seek(0, SEEK_END)		  # required to make macOS notice log change over SMB
+                loghandle.seek(log_pos, SEEK_SET)  # reset EOF flag # TODO: log_pos reported as possibly unbound
+                for line in loghandle:
+                    # Paranoia check to see if we're shutting down
+                    if threading.current_thread() != self.thread:
+                        logger.info("We're not meant to be running, exiting...")
+                        return  # Terminate
+
+                    if b'"event":"Continue"' in line:
+                        for _ in range(10):
+                            logger.trace_if('journal.continuation', "****")
+                        logger.trace_if('journal.continuation', 'Found a Continue event, its being added to the list, '
+                                        'we will finish this file up and then continue with the next')
+
+                    self.event_queue.put(line)
 
                 if not self.event_queue.empty():
                     if not config.shutting_down:
@@ -444,25 +388,6 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                     loghandle.close()
 
                 return  # Terminate
-
-            if self.game_was_running:
-                if not self.game_running():
-                    logger.info('Detected exit from game, synthesising ShutDown event')
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())
-                    self.event_queue.put(
-                        f'{{ "timestamp":"{timestamp}", "event":"ShutDown" }}'
-                    )
-
-                    if not config.shutting_down:
-                        logger.trace_if('journal.queue', 'Sending <<JournalEvent>>')
-                        self.root.event_generate('<<JournalEvent>>', when="tail")
-
-                    self.game_was_running = False
-
-            else:
-                self.game_was_running = self.game_running()
-
-        logger.debug('Done.')
 
     # Direct from EDMC, synced 14 June 2021 with 713b6b753d40cb3d3e2af1be0f3623298087a85f
 
