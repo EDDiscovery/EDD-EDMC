@@ -67,6 +67,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         FileSystemEventHandler.__init__(self)  # futureproofing - not need for current version of watchdog
         self.root: 'tkinter.Tk' = None  # type: ignore # Don't use Optional[] - mypy thinks no methods
         self.currentdir: Optional[str] = None  # The actual logdir that we're monitoring
+        self.jsondir: Optional[str] = None
         self.logfile: Optional[str] = None
         self.observer: Optional['Observer'] = None
         self.observed = None  # a watchdog ObservedWatch, or None if polling
@@ -168,6 +169,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         logger.debug('Begin...')
         self.root = root  # type: ignore
         self.currentdir = config.app_dir
+        journal_dir = config.get_str('journaldir')
+        if journal_dir == '' or journal_dir is None:
+            journal_dir = config.default_journal_dir
+        self.jsondir = expanduser(journal_dir)
 
         stored = join(config.app_dir, "stored.edd")
         if os.path.exists(stored):
@@ -469,23 +474,23 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 self.started = timegm(strptime(entry['timestamp'], '%Y-%m-%dT%H:%M:%SZ'))
                 # Don't set Ship, ShipID etc since this will reflect Fighter or SRV if starting in those
                 self.state.update({
-                    'Captain': None,
-                    'Credits': entry['Credits'],
-                    'FID': entry.get('FID'),  # From 3.3
-                    'Horizons': entry['Horizons'],  # From 3.0
-                    'Odyssey': entry.get('Odyssey', False),  # From 4.0 Odyssey
-                    'Loan': entry['Loan'],
+                    'Captain':    None,
+                    'Credits':    entry['Credits'],
+                    'FID':        entry.get('FID'),   # From 3.3
+                    'Horizons':   entry['Horizons'],  # From 3.0
+                    'Odyssey':    entry.get('Odyssey', False),  # From 4.0 Odyssey
+                    'Loan':       entry['Loan'],
                     # For Odyssey, by 4.0.0.100, and at least from Horizons 3.8.0.201 the order of events changed
                     # to LoadGame being after some 'status' events.
                     # 'Engineers':  {},  # 'EngineerProgress' event now before 'LoadGame'
                     # 'Rank':       {},  # 'Rank'/'Progress' events now before 'LoadGame'
                     # 'Reputation': {},  # 'Reputation' event now before 'LoadGame'
                     'Statistics': {},  # Still after 'LoadGame' in 4.0.0.903
-                    'Role': None,
-                    'Taxi': None,
-                    'Dropship': None,
-                    'Body': None,
-                    'BodyType': None,
+                    'Role':       None,
+                    'Taxi':       None,
+                    'Dropship':   None,
+                    'Body':       None,
+                    'BodyType':   None,
                 })
                 if entry.get('Ship') is not None and self._RE_SHIP_ONFOOT.search(entry['Ship']):
                     self.state['OnFoot'] = True
@@ -527,9 +532,9 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 self.state['Modules'] = None
 
             elif (
-                    event_type == 'loadout' and
-                    'fighter' not in self.canonicalise(entry['Ship']) and
-                    'buggy' not in self.canonicalise(entry['Ship'])
+                event_type == 'loadout' and
+                'fighter' not in self.canonicalise(entry['Ship']) and
+                'buggy' not in self.canonicalise(entry['Ship'])
             ):
                 self.state['ShipID'] = entry['ShipID']
                 self.state['ShipIdent'] = entry['ShipIdent']
@@ -551,7 +556,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                     module = dict(module)
                     module['Item'] = self.canonicalise(module['Item'])
                     if ('Hardpoint' in module['Slot'] and
-                            not module['Slot'].startswith('TinyHardpoint') and
+                        not module['Slot'].startswith('TinyHardpoint') and
                             module.get('AmmoInClip') == module.get('AmmoInHopper') == 1):  # lasers
                         module.pop('AmmoInClip')
                         module.pop('AmmoInHopper')
@@ -560,12 +565,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
             elif event_type == 'modulebuy':
                 self.state['Modules'][entry['Slot']] = {
-                    'Slot': entry['Slot'],
-                    'Item': self.canonicalise(entry['BuyItem']),
-                    'On': True,
+                    'Slot':     entry['Slot'],
+                    'Item':     self.canonicalise(entry['BuyItem']),
+                    'On':       True,
                     'Priority': 1,
-                    'Health': 1.0,
-                    'Value': entry['BuyPrice'],
+                    'Health':   1.0,
+                    'Value':    entry['BuyPrice'],
                 }
 
                 self.state['Credits'] -= entry.get('BuyPrice', 0)
@@ -771,7 +776,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                             engineers[engineer] = entry['Progress']
 
             elif event_type == 'cargo' and entry.get('Vessel') == 'Ship':
-                self.state['CargoJSON'] = self.state['Cargo']
+                self.state['Cargo'] = defaultdict(int)
+                # From 3.3 full Cargo event (after the first one) is written to a separate file
+                if 'Inventory' not in entry:
+                    with open(join(self.jsondir, 'Cargo.json'), 'rb') as h:  # type: ignore
+                        entry = json.load(h, object_pairs_hook=OrderedDict)  # Preserve property order because why not?
+                        self.state['CargoJSON'] = entry
 
                 clean = self.coalesce_cargo(entry['Inventory'])
 
@@ -796,33 +806,32 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 # Always attempt loading of this, but if it fails we'll hope this was
                 # a startup/boarding version and thus `entry` contains
                 # the data anyway.
-                # currentdir_path = pathlib.Path(str(self.currentdir))
-                # shiplocker_filename = currentdir_path / 'ShipLocker.json'
-                # shiplocker_max_attempts = 5
-                # shiplocker_fail_sleep = 0.01
-                # attempts = 0
-                # while attempts < shiplocker_max_attempts:
-                #     attempts += 1
-                #     try:
-                #         with open(shiplocker_filename, 'rb') as h:  # type: ignore
-                #             entry = json.load(h, object_pairs_hook=OrderedDict)
-                #             self.state['ShipLockerJSON'] = entry
-                #             break
-                # 
-                #     except FileNotFoundError:
-                #         logger.warning('ShipLocker event but no ShipLocker.json file')
-                #         sleep(shiplocker_fail_sleep)
-                #         pass
-                # 
-                #     except json.JSONDecodeError as e:
-                #         logger.warning(f'ShipLocker.json failed to decode:\n{e!r}\n')
-                #         sleep(shiplocker_fail_sleep)
-                #         pass
-                # 
-                # else:
-                #     logger.warning(f'Failed to load & decode shiplocker after {shiplocker_max_attempts} tries. '
-                #                    'Giving up.')
-                self.state['ShipLockerJSON'] = self.state['ShipLocker']
+                currentdir_path = pathlib.Path(str(self.jsondir))
+                shiplocker_filename = currentdir_path / 'ShipLocker.json'
+                shiplocker_max_attempts = 5
+                shiplocker_fail_sleep = 0.01
+                attempts = 0
+                while attempts < shiplocker_max_attempts:
+                    attempts += 1
+                    try:
+                        with open(shiplocker_filename, 'rb') as h:  # type: ignore
+                            entry = json.load(h, object_pairs_hook=OrderedDict)
+                            self.state['ShipLockerJSON'] = entry
+                            break
+
+                    except FileNotFoundError:
+                        logger.warning('ShipLocker event but no ShipLocker.json file')
+                        sleep(shiplocker_fail_sleep)
+                        pass
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(f'ShipLocker.json failed to decode:\n{e!r}\n')
+                        sleep(shiplocker_fail_sleep)
+                        pass
+
+                else:
+                    logger.warning(f'Failed to load & decode shiplocker after {shiplocker_max_attempts} tries. '
+                                   'Giving up.')
 
                 if not all(t in entry for t in ('Components', 'Consumables', 'Data', 'Items')):
                     logger.warning('ShipLocker event is missing at least one category')
@@ -866,53 +875,57 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
                 # TODO: v31 doc says this is`backpack.json` ... but Howard Chalkley
                 #       said it's `Backpack.json`
-                # backpack_file = pathlib.Path(str(self.currentdir)) / 'Backpack.json'
-                # backpack_data = None
-                # 
-                # if not backpack_file.exists():
-                #     logger.warning(f'Failed to find backpack.json file as it appears not to exist? {backpack_file=}')
-                # 
-                # else:
-                #     backpack_data = backpack_file.read_bytes()
-                # 
-                # parsed = None
-                # 
-                # if backpack_data is None:
-                #     logger.warning('Unable to read backpack data!')
-                # 
-                # elif len(backpack_data) == 0:
-                #     logger.warning('Backpack.json was empty when we read it!')
-                # 
-                # else:
-                #     try:
-                #         parsed = json.loads(backpack_data)
-                # 
-                #     except json.JSONDecodeError:
-                #         logger.exception('Unable to parse Backpack.json')
-                self.state['BackpackJSON'] = self.state['BackPack']
+                backpack_file = pathlib.Path(str(self.jsondir)) / 'Backpack.json'
+                backpack_data = None
 
-                # Assume this reflects the current state when written
-                self.backpack_set_empty()
+                if not backpack_file.exists():
+                    logger.warning(f'Failed to find backpack.json file as it appears not to exist? {backpack_file=}')
 
-                clean_components = self.coalesce_cargo(entry['Components'])
-                self.state['BackPack']['Component'].update(
-                    {self.canonicalise(x['Name']): x['Count'] for x in clean_components}
-                )
+                else:
+                    backpack_data = backpack_file.read_bytes()
 
-                clean_consumables = self.coalesce_cargo(entry['Consumables'])
-                self.state['BackPack']['Consumable'].update(
-                    {self.canonicalise(x['Name']): x['Count'] for x in clean_consumables}
-                )
+                parsed = None
 
-                clean_items = self.coalesce_cargo(entry['Items'])
-                self.state['BackPack']['Item'].update(
-                    {self.canonicalise(x['Name']): x['Count'] for x in clean_items}
-                )
+                if backpack_data is None:
+                    logger.warning('Unable to read backpack data!')
 
-                clean_data = self.coalesce_cargo(entry['Data'])
-                self.state['BackPack']['Data'].update(
-                    {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
-                )
+                elif len(backpack_data) == 0:
+                    logger.warning('Backpack.json was empty when we read it!')
+
+                else:
+                    try:
+                        parsed = json.loads(backpack_data)
+
+                    except json.JSONDecodeError:
+                        logger.exception('Unable to parse Backpack.json')
+
+                if parsed is not None:
+                    entry = parsed  # set entry so that it ends up in plugins with the right data
+                    # Store in monitor.state
+                    self.state['BackpackJSON'] = entry
+
+                    # Assume this reflects the current state when written
+                    self.backpack_set_empty()
+
+                    clean_components = self.coalesce_cargo(entry['Components'])
+                    self.state['BackPack']['Component'].update(
+                        {self.canonicalise(x['Name']): x['Count'] for x in clean_components}
+                    )
+
+                    clean_consumables = self.coalesce_cargo(entry['Consumables'])
+                    self.state['BackPack']['Consumable'].update(
+                        {self.canonicalise(x['Name']): x['Count'] for x in clean_consumables}
+                    )
+
+                    clean_items = self.coalesce_cargo(entry['Items'])
+                    self.state['BackPack']['Item'].update(
+                        {self.canonicalise(x['Name']): x['Count'] for x in clean_items}
+                    )
+
+                    clean_data = self.coalesce_cargo(entry['Data'])
+                    self.state['BackPack']['Data'].update(
+                        {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
+                    )
 
             elif event_type == 'backpackchange':
                 # Changes to Odyssey Backpack contents *other* than from a Transfer
@@ -1050,12 +1063,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 # "Name_Localised":"Maverick Suit", "Price":150000, "SuitID":1698364934364699 }
                 loc_name = entry.get('Name_Localised', entry['Name'])
                 self.state['Suits'][entry['SuitID']] = {
-                    'name': entry['Name'],
-                    'locName': loc_name,
-                    'edmcName': self.suit_sane_name(loc_name),
-                    'id': None,  # Is this an FDev ID for suit type ?
-                    'suitId': entry['SuitID'],
-                    'mods': entry['SuitMods'],  # Suits can (rarely) be bought with modules installed
+                    'name':      entry['Name'],
+                    'locName':   loc_name,
+                    'edmcName':  self.suit_sane_name(loc_name),
+                    'id':        None,  # Is this an FDev ID for suit type ?
+                    'suitId':    entry['SuitID'],
+                    'mods':      entry['SuitMods'],  # Suits can (rarely) be bought with modules installed
                 }
 
                 # update credits
@@ -1115,13 +1128,13 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                     loadout_id = self.suit_loadout_id_from_loadoutid(entry['LoadoutID'])
                     try:
                         self.state['SuitLoadouts'][loadout_id]['slots'][entry['SlotName']] = {
-                            'name': entry['ModuleName'],
-                            'locName': entry.get('ModuleName_Localised', entry['ModuleName']),
-                            'id': None,
-                            'weaponrackId': entry['SuitModuleID'],
+                            'name':           entry['ModuleName'],
+                            'locName':        entry.get('ModuleName_Localised', entry['ModuleName']),
+                            'id':             None,
+                            'weaponrackId':   entry['SuitModuleID'],
                             'locDescription': '',
-                            'class': entry['Class'],
-                            'mods': entry['WeaponMods']
+                            'class':          entry['Class'],
+                            'mods':           entry['WeaponMods']
                         }
 
                     except KeyError:
@@ -1217,6 +1230,29 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 self.state['Credits'] += entry.get('Refund', 0)
                 self.state['Taxi'] = False
 
+            elif event_type == 'navroute':
+                # Added in ED 3.7 - multi-hop route details in NavRoute.json
+                with open(join(self.jsondir, 'NavRoute.json'), 'rb') as rf:  # type: ignore
+                    try:
+                        entry = json.load(rf)
+
+                    except json.JSONDecodeError:
+                        logger.exception('Failed decoding NavRoute.json', exc_info=True)
+
+                    else:
+                        self.state['NavRoute'] = entry
+
+            elif event_type == 'moduleinfo':
+                with open(join(self.jsondir, 'ModulesInfo.json'), 'rb') as mf:  # type: ignore
+                    try:
+                        entry = json.load(mf)
+
+                    except json.JSONDecodeError:
+                        logger.exception('Failed decoding ModulesInfo.json', exc_info=True)
+
+                    else:
+                        self.state['ModuleInfo'] = entry
+
             elif event_type in ('collectcargo', 'marketbuy', 'buydrones', 'miningrefined'):
                 commodity = self.canonicalise(entry['Type'])
                 self.state['Cargo'][commodity] += entry.get('Count', 1)
@@ -1289,7 +1325,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 state_category[received['Material']] += received['Quantity']
 
             elif event_type == 'EngineerCraft' or (
-                    event_type == 'engineerlegacyconvert' and not entry.get('IsPreview')
+                event_type == 'engineerlegacyconvert' and not entry.get('IsPreview')
             ):
 
                 for category in ('Raw', 'Manufactured', 'Encoded'):
@@ -1301,15 +1337,15 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                                 self.state[category].pop(material)
 
                 module = self.state['Modules'][entry['Slot']]
-                assert (module['Item'] == self.canonicalise(entry['Module']))
+                assert(module['Item'] == self.canonicalise(entry['Module']))
                 module['Engineering'] = {
-                    'Engineer': entry['Engineer'],
-                    'EngineerID': entry['EngineerID'],
+                    'Engineer':      entry['Engineer'],
+                    'EngineerID':    entry['EngineerID'],
                     'BlueprintName': entry['BlueprintName'],
-                    'BlueprintID': entry['BlueprintID'],
-                    'Level': entry['Level'],
-                    'Quality': entry['Quality'],
-                    'Modifiers': entry['Modifiers'],
+                    'BlueprintID':   entry['BlueprintID'],
+                    'Level':         entry['Level'],
+                    'Quality':       entry['Quality'],
+                    'Modifiers':     entry['Modifiers'],
                 }
 
                 if 'ExperimentalEffect' in entry:
@@ -1587,7 +1623,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             edmc_suitname = self.suit_sane_name(suitname)
             suit = {
                 'edmcName': edmc_suitname,
-                'locName': suitname,
+                'locName':  suitname,
             }
 
         # Overwrite with latest data, just in case, as this can be from CAPI which may or may not have had
@@ -1600,9 +1636,9 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # Make the new loadout, in the CAPI format
         new_loadout = {
             'loadoutSlotId': suitloadout_slotid,
-            'suit': suit,
-            'name': entry['LoadoutName'],
-            'slots': self.suit_loadout_slots_array_to_dict(entry['Modules']),
+            'suit':          suit,
+            'name':          entry['LoadoutName'],
+            'slots':         self.suit_loadout_slots_array_to_dict(entry['Modules']),
         }
         # Assign this loadout into our state
         self.state['SuitLoadouts'][f"{suitloadout_slotid}"] = new_loadout
@@ -1883,14 +1919,15 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         d['Modules'] = []
 
         for slot in sorted(
-                self.state['Modules'],
-                key=lambda x: (
-                        'Hardpoint' not in x,
-                        len(standard_order) if x not in standard_order else standard_order.index(x),
-                        'Slot' not in x,
-                        x
-                )
+            self.state['Modules'],
+            key=lambda x: (
+                'Hardpoint' not in x,
+                len(standard_order) if x not in standard_order else standard_order.index(x),
+                'Slot' not in x,
+                x
+            )
         ):
+
             module = dict(self.state['Modules'][slot])
             module.pop('Health', None)
             module.pop('Value', None)
@@ -2035,13 +2072,13 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 continue
 
             slots[s] = {
-                'name': loadout_slots[s]['ModuleName'],
-                'id': None,  # FDevID ?
-                'weaponrackId': loadout_slots[s]['SuitModuleID'],
-                'locName': loadout_slots[s].get('ModuleName_Localised', loadout_slots[s]['ModuleName']),
+                'name':           loadout_slots[s]['ModuleName'],
+                'id':             None,  # FDevID ?
+                'weaponrackId':   loadout_slots[s]['SuitModuleID'],
+                'locName':        loadout_slots[s].get('ModuleName_Localised', loadout_slots[s]['ModuleName']),
                 'locDescription': '',
-                'class': loadout_slots[s]['Class'],
-                'mods': loadout_slots[s]['WeaponMods'],
+                'class':          loadout_slots[s]['Class'],
+                'mods':           loadout_slots[s]['WeaponMods'],
             }
 
         return slots

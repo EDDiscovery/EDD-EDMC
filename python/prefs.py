@@ -343,24 +343,7 @@ class PreferencesDialog(tk.Toplevel):
         # LANG: Settings > Output - choosing what data to save to files
         self.out_label = nb.Label(output_frame, text=_('Please choose what data to save'))
         self.out_label.grid(columnspan=2, padx=self.PADX, sticky=tk.W, row=row.get())
-
-        # self.out_csv = tk.IntVar(value=1 if (output & config.OUT_MKT_CSV) else 0)
-        # self.out_csv_button = nb.Checkbutton(
-        #     output_frame,
-        #     text=_('Market data in CSV format file'),  # LANG: Settings > Output option
-        #     variable=self.out_csv,
-        #     command=self.outvarchanged
-        # )
-        # self.out_csv_button.grid(columnspan=2, padx=self.BUTTONX, sticky=tk.W, row=row.get())
-        # 
-        # self.out_td = tk.IntVar(value=1 if (output & config.OUT_MKT_TD) else 0)
-        # self.out_td_button = nb.Checkbutton(
-        #     output_frame,
-        #     text=_('Market data in Trade Dangerous format file'),  # LANG: Settings > Output option
-        #     variable=self.out_td,
-        #     command=self.outvarchanged
-        # )
-        # self.out_td_button.grid(columnspan=2, padx=self.BUTTONX, sticky=tk.W, row=row.get())
+        
         self.out_ship = tk.IntVar(value=1 if (output & config.OUT_SHIP) else 0)
 
         # Output setting
@@ -432,6 +415,45 @@ class PreferencesDialog(tk.Toplevel):
 
         self.logdir.set(logdir)
         self.logdir_entry = nb.Entry(config_frame, takefocus=False)
+
+        # Location of the Journal files
+        nb.Label(
+            config_frame,
+            # LANG: Settings > Configuration - Label for Journal files location
+            text=_('E:D journal file location')+':'
+        ).grid(columnspan=4, padx=self.PADX, sticky=tk.W, row=row.get())
+
+        self.logdir_entry.grid(columnspan=4, padx=self.PADX, pady=(0, self.PADY), sticky=tk.EW, row=row.get())
+
+        text = (_('Browse...'))  # LANG: NOT-macOS Setting - files location selection button
+
+        self.logbutton = nb.Button(
+            config_frame,
+            text=text,
+            # LANG: Settings > Configuration - Label for Journal files location
+            command=lambda: self.filebrowse(_('E:D journal file location'), self.logdir)
+        )
+        self.logbutton.grid(column=3, padx=self.PADX, pady=self.PADY, sticky=tk.EW, row=row.get())
+
+        if config.default_journal_dir_path:
+            # Appearance theme and language setting
+            nb.Button(
+                config_frame,
+                # LANG: Settings > Configuration - Label on 'reset journal files location to default' button
+                text=_('Default'),
+                command=self.logdir_reset,
+                state=tk.NORMAL if config.get_str('journaldir') else tk.DISABLED
+            ).grid(column=2, pady=self.PADY, sticky=tk.EW, row=row.get())
+
+        nb.Label(
+            config_frame,
+            # LANG: Settings > Configuration - Label for Journal files location
+            text=_('This is used specifically to parse JSON files for cargo, nav data, etc.')
+        ).grid(columnspan=4, padx=self.PADX, sticky=tk.W, row=row.get())
+
+        ttk.Separator(config_frame, orient=tk.HORIZONTAL).grid(
+            columnspan=4, padx=self.PADX, pady=self.PADY*4, sticky=tk.EW, row=row.get()
+        )
 
         # Settings prompt for preferred ship loadout, system and station info websites
         # LANG: Label for preferred shipyard, system and station 'providers'
@@ -880,8 +902,6 @@ class PreferencesDialog(tk.Toplevel):
         self.displaypath(self.logdir, self.logdir_entry)
 
         self.out_label['state'] = tk.NORMAL
-        # self.out_csv_button['state'] = tk.NORMAL
-        # self.out_td_button['state'] = tk.NORMAL
         self.out_ship_button['state'] = tk.NORMAL
 
     def filebrowse(self, title, pathvar):
@@ -1027,9 +1047,7 @@ class PreferencesDialog(tk.Toplevel):
         """Update the config with the options set on the dialog."""
         config.set('PrefsVersion', prefsVersion.stringToSerial(appversion_nobuild()))
         config.set(
-            'output',
-            # (self.out_td.get() and config.OUT_MKT_TD) +
-            # (self.out_csv.get() and config.OUT_MKT_CSV) +
+            'output',\
             (config.OUT_MKT_MANUAL if not self.out_auto.get() else 0) +
             (self.out_ship.get() and config.OUT_SHIP) +
             (config.get_int('output') & (config.OUT_MKT_EDDN | config.OUT_SYS_EDDN | config.OUT_SYS_DELAY))
