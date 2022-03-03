@@ -2,14 +2,12 @@
 
 import sys
 import tkinter as tk
-from typing import TYPE_CHECKING, Any, List, Mapping, MutableMapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Mapping, MutableMapping, Optional
 
 import requests
 
-import plug
-from config import applongname, appversion, config
+from config import config
 from EDMCLogging import get_main_logger
-from ttkHyperlinkLabel import HyperlinkLabel
 
 if TYPE_CHECKING:
     def _(x: str) -> str:

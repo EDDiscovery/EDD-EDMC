@@ -11,14 +11,13 @@ import os
 import shutil
 import sys
 from distutils.core import setup
-from os.path import exists, isdir, join
+from os.path import isdir, join
 from config import (
-    appcmdname, applongname, appname, appversion, appversion_nobuild, copyright, git_shorthash_from_head, update_feed,
-    update_interval
+    applongname, appname, appversion, copyright, git_shorthash_from_head
 )
 from constants import GITVERSION_FILE
 
-if sys.version_info[0:2] != (3, 9):
+if sys.version_info[0:2] != (3, 10):
     raise AssertionError(f'Unexpected python version {sys.version}')
 
 ###########################################################################

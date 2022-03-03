@@ -12,8 +12,7 @@ import threading
 from builtins import object, str
 from os import chdir, environ
 from os.path import dirname, join, isdir
-from sys import platform
-from time import localtime, strftime, time
+from time import time
 from typing import TYPE_CHECKING, Optional, Tuple
 
 # Have this as early as possible for people running eddedmc.exe
@@ -21,7 +20,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 # place for things like config.py reading .gitversion
 if getattr(sys, 'frozen', False):
     # Under py2exe sys.path[0] is the executable name
-    if platform == 'win32':
+    if sys.platform == 'win32':
         chdir(dirname(sys.path[0]))
         # Allow executable to be invoked from any cwd
         environ['TCL_LIBRARY'] = join(dirname(sys.path[0]), 'lib', 'tcl')
@@ -32,7 +31,7 @@ else:
     # not frozen.
     chdir(pathlib.Path(__file__).parent)
 
-from constants import applongname, appname, protocolhandler_redirect
+from constants import applongname, appname
 
 # config will now cause an appname logger to be set up, so we need the
 # console redirect before this
@@ -50,16 +49,18 @@ if __name__ == '__main__':
 # These need to be after the stdout/err redirect because they will cause
 # logging to be set up.
 # isort: off
-from config import appversion, appversion_nobuild, config, copyright
+from config import appversion, config
 # isort: on
 
-from EDMCLogging import edmclogger, logger, logging
+from EDMCLogging import logger
 
 # See EDMCLogging.py docs.
 # isort: off
 if TYPE_CHECKING:
     from logging import TRACE  # type: ignore # noqa: F401 # Needed to update mypy
-    from infi.systray import SysTrayIcon
+
+    if sys.platform == 'win32':
+        from infi.systray import SysTrayIcon
     # isort: on
 
     def _(x: str) -> str:
@@ -67,10 +68,7 @@ if TYPE_CHECKING:
         return x
 
 import tkinter as tk
-import tkinter.filedialog
-import tkinter.font
 import tkinter.messagebox
-from tkinter import ttk
 
 import plug
 import prefs
@@ -119,7 +117,7 @@ class Application(object):
 
         self.prefsdialog = None
 
-        if platform == 'win32':
+        if sys.platform == 'win32':
             from infi.systray import SysTrayIcon
 
             def open_window(systray: 'SysTrayIcon') -> None:
@@ -132,16 +130,16 @@ class Application(object):
 
         plug.load_plugins(master)
 
-        if platform == 'win32':
+        if sys.platform == 'win32':
             self.w.wm_iconbitmap(default='EDDEDMC.ico')
 
-        # TODO: Export to files and merge from them in future ?
-        self.theme_icon = tk.PhotoImage(
-            data='R0lGODlhFAAQAMZQAAoKCQoKCgsKCQwKCQsLCgwLCg4LCQ4LCg0MCg8MCRAMCRANChINCREOChIOChQPChgQChgRCxwTCyYVCSoXCS0YCTkdCTseCT0fCTsjDU0jB0EnDU8lB1ElB1MnCFIoCFMoCEkrDlkqCFwrCGEuCWIuCGQvCFs0D1w1D2wyCG0yCF82D182EHE0CHM0CHQ1CGQ5EHU2CHc3CHs4CH45CIA6CIE7CJdECIdLEolMEohQE5BQE41SFJBTE5lUE5pVE5RXFKNaFKVbFLVjFbZkFrxnFr9oFsNqFsVrF8RsFshtF89xF9NzGNh1GNl2GP+KG////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////yH5BAEKAH8ALAAAAAAUABAAAAeegAGCgiGDhoeIRDiIjIZGKzmNiAQBQxkRTU6am0tPCJSGShuSAUcLoIIbRYMFra4FAUgQAQCGJz6CDQ67vAFJJBi0hjBBD0w9PMnJOkAiJhaIKEI7HRoc19ceNAolwbWDLD8uAQnl5ga1I9CHEjEBAvDxAoMtFIYCBy+kFDKHAgM3ZtgYSLAGgwkp3pEyBOJCC2ELB31QATGioAoVAwEAOw==')  # noqa: E501
-        self.theme_minimize = tk.BitmapImage(
-            data='#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfc, 0x3f,\n   0xfc, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };\n')  # noqa: E501
-        self.theme_close = tk.BitmapImage(
-            data='#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x0c, 0x30, 0x1c, 0x38, 0x38, 0x1c, 0x70, 0x0e,\n   0xe0, 0x07, 0xc0, 0x03, 0xc0, 0x03, 0xe0, 0x07, 0x70, 0x0e, 0x38, 0x1c,\n   0x1c, 0x38, 0x0c, 0x30, 0x00, 0x00, 0x00, 0x00 };\n')  # noqa: E501
+            # TODO: Export to files and merge from them in future ?
+            self.theme_icon = tk.PhotoImage(
+                data='R0lGODlhFAAQAMZQAAoKCQoKCgsKCQwKCQsLCgwLCg4LCQ4LCg0MCg8MCRAMCRANChINCREOChIOChQPChgQChgRCxwTCyYVCSoXCS0YCTkdCTseCT0fCTsjDU0jB0EnDU8lB1ElB1MnCFIoCFMoCEkrDlkqCFwrCGEuCWIuCGQvCFs0D1w1D2wyCG0yCF82D182EHE0CHM0CHQ1CGQ5EHU2CHc3CHs4CH45CIA6CIE7CJdECIdLEolMEohQE5BQE41SFJBTE5lUE5pVE5RXFKNaFKVbFLVjFbZkFrxnFr9oFsNqFsVrF8RsFshtF89xF9NzGNh1GNl2GP+KG////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////yH5BAEKAH8ALAAAAAAUABAAAAeegAGCgiGDhoeIRDiIjIZGKzmNiAQBQxkRTU6am0tPCJSGShuSAUcLoIIbRYMFra4FAUgQAQCGJz6CDQ67vAFJJBi0hjBBD0w9PMnJOkAiJhaIKEI7HRoc19ceNAolwbWDLD8uAQnl5ga1I9CHEjEBAvDxAoMtFIYCBy+kFDKHAgM3ZtgYSLAGgwkp3pEyBOJCC2ELB31QATGioAoVAwEAOw==')  # noqa: E501
+            self.theme_minimize = tk.BitmapImage(
+                data='#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\n   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfc, 0x3f,\n   0xfc, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };\n')  # noqa: E501
+            self.theme_close = tk.BitmapImage(
+                data='#define im_width 16\n#define im_height 16\nstatic unsigned char im_bits[] = {\n   0x00, 0x00, 0x00, 0x00, 0x0c, 0x30, 0x1c, 0x38, 0x38, 0x1c, 0x70, 0x0e,\n   0xe0, 0x07, 0xc0, 0x03, 0xc0, 0x03, 0xe0, 0x07, 0x70, 0x0e, 0x38, 0x1c,\n   0x1c, 0x38, 0x0c, 0x30, 0x00, 0x00, 0x00, 0x00 };\n')  # noqa: E501
 
         frame = tk.Frame(self.w, name=appname.lower())
         frame.grid(sticky=tk.NSEW)
@@ -201,7 +199,7 @@ class Application(object):
         self.status.grid(columnspan=2, sticky=tk.EW)
 
         for child in frame.winfo_children():
-            child.grid_configure(padx=self.PADX, pady=(platform != 'win32' or isinstance(child, tk.Frame)) and 2 or 0)
+            child.grid_configure(padx=self.PADX, pady=(sys.platform != 'win32' or isinstance(child, tk.Frame)) and 2 or 0)
 
         self.newversion_button = tk.Button(frame, text='NewVersion', width=28, default=tk.ACTIVE)	# Update button in main window
         row = frame.grid_size()[1]
@@ -221,7 +219,7 @@ class Application(object):
         self.help_menu.add_command(command=self.help_about)
 
         self.menubar.add_cascade(menu=self.help_menu)
-        if platform == 'win32':
+        if sys.platform == 'win32':
             # Must be added after at least one "real" menu entry
             self.always_ontop = tk.BooleanVar(value=bool(config.get_int('always_ontop')))
             self.system_menu = tk.Menu(self.menubar, name='system', tearoff=tk.FALSE)
@@ -292,11 +290,11 @@ class Application(object):
         if config.get_str('geometry'):
             match = re.match(r'\+([\-\d]+)\+([\-\d]+)', config.get_str('geometry'))
             if match:
-                if platform == 'darwin':
+                if sys.platform == 'darwin':
                     # http://core.tcl.tk/tk/tktview/c84f660833546b1b84e7
                     if int(match.group(2)) >= 0:
                         self.w.geometry(config.get_str('geometry'))
-                elif platform == 'win32':
+                elif sys.platform == 'win32':
                     # Check that the titlebar will be at least partly on screen
                     import ctypes
                     from ctypes.wintypes import POINT
@@ -372,7 +370,7 @@ class Application(object):
             self.suit_shown = True
 
         if not self.suit_shown:
-            if platform != 'win32':
+            if sys.platform != 'win32':
                 pady = 2
 
             else:
@@ -400,9 +398,10 @@ class Application(object):
         self.station.configure(url=self.station_url)
 
         # (Re-)install log monitoring
-        if not monitor.start(self.w):
-            # LANG: ED Journal file location appears to be in error
-            self.status['text'] = _('Error: Check E:D journal file location')
+        if not monitor.running():
+            if not monitor.start(self.w):
+                # LANG: ED Journal file location appears to be in error
+                self.status['text'] = _('Error: Check E:D journal file location')
         self.status['text'] = 'Started'
 
     def set_labels(self):
@@ -470,6 +469,11 @@ class Application(object):
             self.updatedetails(entry)
 
             self.w.update_idletasks()
+
+            # Companion login
+            if entry['event'] in [None, 'StartUp', 'NewCommander', 'LoadGame'] and monitor.cmdr:
+                if not config.get_list('cmdrs') or monitor.cmdr not in config.get_list('cmdrs'):
+                    config.set('cmdrs', config.get_list('cmdrs', default=[]) + [monitor.cmdr])
 
             if monitor.mode == 'CQC' and entry['event']:
                 err = plug.notify_journal_entry_cqc(monitor.cmdr, monitor.is_beta, entry, monitor.state)
@@ -679,7 +683,7 @@ class Application(object):
 
     def onexit(self, event=None) -> None:
         """Application shutdown procedure."""
-        if platform == 'win32':
+        if sys.platform == 'win32':
             shutdown_thread = threading.Thread(target=self.systray.shutdown)
             shutdown_thread.setDaemon(True)
             shutdown_thread.start()
@@ -687,7 +691,7 @@ class Application(object):
         config.set_shutdown()  # Signal we're in shutdown now.
 
         # http://core.tcl.tk/tk/tktview/c84f660833546b1b84e7
-        if platform != 'darwin' or self.w.winfo_rooty() > 0:
+        if sys.platform != 'darwin' or self.w.winfo_rooty() > 0:
             x, y = self.w.geometry().split('+')[1:3]  # e.g. '212x170+2881+1267'
             config.set('geometry', f'+{x}+{y}')
 
@@ -780,7 +784,7 @@ class Application(object):
 
 def test_logging() -> None:
     """Simple test of top level logging."""
-    logger.debug('Test from EDMarketConnector.py top-level test_logging()')
+    logger.debug('Test from eddedmc.py top-level test_logging()')
 
 
 def log_locale(prefix: str) -> None:

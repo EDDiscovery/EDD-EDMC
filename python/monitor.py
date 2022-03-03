@@ -1,19 +1,21 @@
 """Monitor for new Journal files and contents of latest."""
+#                                                                             v [sic]
+# spell-checker: words onfoot unforseen relog fsdjump suitloadoutid slotid suitid loadoutid fauto Intimidator
+# spell-checker: words joinacrew quitacrew sellshiponrebuy newbal navroute npccrewpaidwage sauto
 
 import os
 import json
 import pathlib
 import queue
 import re
+import sys
 import threading
 from calendar import timegm
 from collections import OrderedDict, defaultdict
 from os import SEEK_END, SEEK_SET, listdir
-from os.path import basename, expanduser, isdir, join
-from sys import platform
-from time import gmtime, localtime, sleep, strftime, strptime, time
+from os.path import basename, expanduser, join
+from time import gmtime, localtime, mktime, sleep, strftime, strptime, time
 from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, MutableMapping, Optional
-from typing import OrderedDict as OrderedDictT
 from typing import Tuple
 
 if TYPE_CHECKING:
@@ -24,14 +26,25 @@ from config import config
 from edmc_data import edmc_suit_shortnames, edmc_suit_symbol_localised
 from EDMCLogging import get_main_logger
 
+# spell-checker: words navroute
+
 logger = get_main_logger()
 STARTUP = 'journal.startup'
+MAX_NAVROUTE_DISCREPANCY = 5  # Timestamp difference in seconds
 
 if TYPE_CHECKING:
     def _(x: str) -> str:
         return x
 
-elif platform == 'win32':
+if sys.platform == 'darwin':
+    from fcntl import fcntl
+
+    from AppKit import NSWorkspace
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+    F_GLOBAL_NOCACHE = 55
+
+elif sys.platform == 'win32':
     import ctypes
     from ctypes.wintypes import BOOL, HWND, LPARAM, LPWSTR
 
@@ -48,6 +61,14 @@ elif platform == 'win32':
     GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
 
     GetProcessHandleFromHwnd = ctypes.windll.oleacc.GetProcessHandleFromHwnd
+
+else:
+    # Linux's inotify doesn't work over CIFS or NFS, so poll
+    FileSystemEventHandler = object  # dummy
+    if TYPE_CHECKING:
+        # this isn't ever used, but this will make type checking happy
+        from watchdog.events import FileCreatedEvent
+        from watchdog.observers import Observer
 
 
 # Journal handler
@@ -82,6 +103,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # If 1 or 2 a LoadGame event will happen when the game goes live.
         # If 3 we need to inject a special 'StartUp' event since consumers won't see the LoadGame event.
         self.live = False
+        # And whilst we're parsing *only to catch up on state*, we might not want to fully process some things
+        self.catching_up = False
+
+        self.game_was_running = False  # For generation of the "ShutDown" event
 
         # Context for journal handling
         self.version: Optional[str] = None
@@ -99,7 +124,8 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         self.systempopulation: Optional[int] = None
         self.started: Optional[int] = None  # Timestamp of the LoadGame event
 
-        self.lastloc: Optional[str] = None
+        self._navroute_retries_remaining = 0
+        self._last_navroute_journal_timestamp: Optional[float] = None
 
         self.__init_state()
 
@@ -155,8 +181,11 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             'SuitLoadouts':       {},
             'Taxi':               None,  # True whenever we are _in_ a taxi. ie, this is reset on Disembark etc.
             'Dropship':           None,  # Best effort as to whether or not the above taxi is a dropship.
+            'StarPos':            None,  # Best effort current system's galaxy position.
             'Body':               None,
             'BodyType':           None,
+
+            'NavRoute':           None,
         }
 
     def start(self, root: 'tkinter.Tk') -> bool:  # noqa: CCR001
@@ -227,6 +256,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         if self.observed:
             logger.debug('self.observed: Calling unschedule_all()')
             self.observed = None
+            assert self.observer is not None, 'Observer was none but it is in use?'
             self.observer.unschedule_all()
             logger.debug('Done')
 
@@ -286,25 +316,52 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         logfile = self.logfile
         if logfile and 'stored' in logfile:
             loghandle: BinaryIO = open(logfile, 'rb', 0)  # unbuffered
+            if sys.platform == 'darwin':
+                fcntl(loghandle, F_GLOBAL_NOCACHE, -1)  # required to avoid corruption on macOS over SMB
 
+            self.catching_up = True
             for line in loghandle:
                 try:
+                    if b'"event":"Location"' in line:
+                        logger.trace_if('journal.locations', '"Location" event in the past at startup')
+
                     self.parse_stored(line)
                 except Exception as ex:
                     logger.debug(f'Invalid journal entry:\n{line!r}\n', exc_info=ex)
 
+            self.catching_up = False
             log_pos = loghandle.tell()
+
         else:
             loghandle = None  # type: ignore
 
+        emitter = None
         # Watchdog thread -- there is a way to get this by using self.observer.emitters and checking for an attribute:
         # watch, but that may have unforseen differences in behaviour.
-        emitter = self.observed and self.observer._emitter_for_watch[self.observed]  # Note: Uses undocumented attribute
+        if self.observed:
+            assert self.observer is not None, 'self.observer is None but also in use?'
+            # Note: Uses undocumented attribute
+            emitter = self.observed and self.observer._emitter_for_watch[self.observed]
 
         logger.debug('Entering loop...')
         while True:
 
-            newlogfile = self.logfile
+            # Check whether new log file started, e.g. client (re)started.
+            if emitter and emitter.is_alive():
+                newlogfile = self.logfile  # updated by on_created watchdog callback
+            else:
+                # Poll
+                try:
+                    logfiles = sorted(
+                        (x for x in listdir(self.currentdir) if self._RE_LOGFILE.search(x)),
+                        key=lambda x: x.split('.')[1:]
+                    )
+
+                    newlogfile = join(self.currentdir, logfiles[-1]) if logfiles else None  # type: ignore
+
+                except Exception:
+                    logger.exception('Failed to find latest logfile')
+                    newlogfile = None
 
             if logfile:
                 loghandle.seek(0, SEEK_END)		  # required to make macOS notice log change over SMB
@@ -317,6 +374,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                         if threading.current_thread() != self.thread:
                             logger.info("We're not meant to be running, exiting...")
                             return  # Terminate
+    
+                        if b'"event":"Continue"' in line:
+                            for _ in range(10):
+                                logger.trace_if('journal.continuation', "****")
+                            logger.trace_if('journal.continuation', 'Found a Continue event, its being added to the list, '
+                                            'we will finish this file up and then continue with the next')
     
                         self.event_queue.put(line)
 
@@ -337,6 +400,8 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
                 if logfile:
                     loghandle = open(logfile, 'rb', 0)  # unbuffered
+                    if sys.platform == 'darwin':
+                        fcntl(loghandle, F_GLOBAL_NOCACHE, -1)  # required to avoid corruption on macOS over SMB
 
                     log_pos = 0
 
@@ -349,6 +414,25 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                     loghandle.close()
 
                 return  # Terminate
+
+            if self.game_was_running:
+                if not self.game_running():
+                    logger.info('Detected exit from game, synthesising ShutDown event')
+                    timestamp = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime())
+                    self.event_queue.put(
+                        f'{{ "timestamp":"{timestamp}", "event":"ShutDown" }}'
+                    )
+
+                    if not config.shutting_down:
+                        logger.trace_if('journal.queue', 'Sending <<JournalEvent>>')
+                        self.root.event_generate('<<JournalEvent>>', when="tail")
+
+                    self.game_was_running = False
+
+            else:
+                self.game_was_running = self.game_running()
+
+        logger.debug('Done.')
 
     def parse_stored(self, line: bytes) -> None:
         entry = self.parse_entry(line)  # stored ones are parsed now for state update
@@ -414,36 +498,32 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             entry: MutableMapping[str, Any] = json.loads(line, object_pairs_hook=OrderedDict)
             entry['timestamp']  # we expect this to exist # TODO: replace with assert? or an if key in check
 
+            self.__navroute_retry()
+
             event_type = entry['event'].lower()
             if event_type == 'fileheader':
                 self.live = False
+
+                self.cmdr = None
+                self.mode = None
+                self.group = None
+                self.planet = None
+                self.system = None
+                self.station = None
+                self.station_marketid = None
+                self.stationtype = None
+                self.stationservices = None
+                self.coordinates = None
+                self.systemaddress = None
+                self.started = None
+                self.__init_state()
+
                 # Do this AFTER __init_state() lest our nice new state entries be None
                 self.populate_version_info(entry)
 
             elif event_type == 'commander':
                 self.live = True  # First event in 3.0
-                if self.cmdr != entry['Name']:
-                    self.cmdr = entry['Name']
-                    self.mode = None
-                    self.group = None
-                    self.planet = None
-                    self.system = None
-                    self.station = None
-                    self.station_marketid = None
-                    self.stationtype = None
-                    self.stationservices = None
-                    self.coordinates = None
-                    self.systemaddress = None
-                    self.started = None
-                    lang = self.state['GameLanguage']
-                    version = self.state['GameVersion']
-                    build = self.state['GameBuild']
-                    self.__init_state()
-                    self.state['GameLanguage'] = lang
-                    self.state['GameVersion'] = version
-                    self.state['GameBuild'] = build
-                    self.version = self.state['GameVersion']
-                    self.is_beta = any(v in self.version.lower() for v in ('alpha', 'beta'))  # type: ignore
+                self.cmdr = entry['Name']
                 self.state['FID'] = entry['FID']
                 logger.trace_if(STARTUP, f'"Commander" event, {monitor.cmdr=}, {monitor.state["FID"]=}')
 
@@ -611,7 +691,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 # This event is logged when a player (on foot) gets into a ship or SRV
                 # Parameters:
                 #     • SRV: true if getting into SRV, false if getting into a ship
-                #     • Taxi: true when boarding a taxi transposrt ship
+                #     • Taxi: true when boarding a taxi transport ship
                 #     • Multicrew: true when boarding another player’s vessel
                 #     • ID: player’s ship ID (if players own vessel)
                 #     • StarSystem
@@ -639,7 +719,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 #
                 # Parameters:
                 #     • SRV: true if getting out of SRV, false if getting out of a ship
-                #     • Taxi: true when getting out of a taxi transposrt ship
+                #     • Taxi: true when getting out of a taxi transport ship
                 #     • Multicrew: true when getting out of another player’s vessel
                 #     • ID: player’s ship ID (if players own vessel)
                 #     • StarSystem
@@ -701,13 +781,18 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                     self.state['BodyType'] = None
 
                 if 'StarPos' in entry:
-                    self.coordinates = tuple(entry['StarPos'])  # type: ignore
+                    # Plugins need this as well, so copy in state
+                    self.state['StarPos'] = self.coordinates = tuple(entry['StarPos'])  # type: ignore
 
                 self.systemaddress = entry.get('SystemAddress')
 
                 self.systempopulation = entry.get('Population')
 
-                self.system = 'CQC' if entry['StarSystem'] == 'ProvingGround' else entry['StarSystem']
+                if entry['StarSystem'] == 'ProvingGround':
+                    self.system = 'CQC'
+
+                else:
+                    self.system = entry['StarSystem']
 
                 self.station = entry.get('StationName')  # May be None
                 # If on foot in-station 'Docked' is false, but we have a
@@ -1230,17 +1315,15 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 self.state['Credits'] += entry.get('Refund', 0)
                 self.state['Taxi'] = False
 
-            elif event_type == 'navroute':
+            elif event_type == 'navroute' and not self.catching_up:
+                # assume we've failed out the gate, then pull it back if things are fine
+                self._last_navroute_journal_timestamp = mktime(strptime(entry['timestamp'], '%Y-%m-%dT%H:%M:%SZ'))
+                self._navroute_retries_remaining = 11
+
                 # Added in ED 3.7 - multi-hop route details in NavRoute.json
-                with open(join(self.jsondir, 'NavRoute.json'), 'rb') as rf:  # type: ignore
-                    try:
-                        entry = json.load(rf)
-
-                    except json.JSONDecodeError:
-                        logger.exception('Failed decoding NavRoute.json', exc_info=True)
-
-                    else:
-                        self.state['NavRoute'] = entry
+                # rather than duplicating this, lets just call the function
+                if self.__navroute_retry():
+                    entry = self.state['NavRoute']
 
             elif event_type == 'moduleinfo':
                 with open(join(self.jsondir, 'ModulesInfo.json'), 'rb') as mf:  # type: ignore
@@ -1324,7 +1407,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 category = self.category(received['Category'])
                 state_category[received['Material']] += received['Quantity']
 
-            elif event_type == 'EngineerCraft' or (
+            elif event_type == 'engineercraft' or (
                 event_type == 'engineerlegacyconvert' and not entry.get('IsPreview')
             ):
 
@@ -1856,12 +1939,12 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
         :return: bool - True if the game is running.
         """
-        if platform == 'darwin':
+        if sys.platform == 'darwin':
             for app in NSWorkspace.sharedWorkspace().runningApplications():
                 if app.bundleIdentifier() == 'uk.co.frontier.EliteDangerous':
                     return True
 
-        elif platform == 'win32':
+        elif sys.platform == 'win32':
             def WindowTitle(h):  # noqa: N802 # type: ignore
                 if h:
                     length = GetWindowTextLength(h) + 1
@@ -2082,6 +2165,72 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             }
 
         return slots
+
+    def _parse_navroute_file(self) -> Optional[dict[str, Any]]:
+        """Read and parse NavRoute.json."""
+        if self.jsondir is None:
+            raise ValueError('jsondir unset')
+
+        try:
+
+            with open(join(self.jsondir, 'NavRoute.json'), 'r') as f:
+                raw = f.read()
+
+        except Exception as e:
+            logger.exception(f'Could not open navroute file. Bailing: {e}')
+            return None
+
+        try:
+            data = json.loads(raw)
+
+        except json.JSONDecodeError:
+            logger.exception('Failed to decode NavRoute.json', exc_info=True)
+            return None
+
+        if 'timestamp' not in data:  # quick sanity check
+            return None
+
+        return data
+
+    @staticmethod
+    def _parse_journal_timestamp(source: str) -> float:
+        return mktime(strptime(source, '%Y-%m-%dT%H:%M:%SZ'))
+
+    def __navroute_retry(self) -> bool:
+        """Retry reading navroute files."""
+        if self._navroute_retries_remaining == 0:
+            return False
+
+        logger.info(f'Navroute read retry [{self._navroute_retries_remaining}]')
+        self._navroute_retries_remaining -= 1
+
+        if self._last_navroute_journal_timestamp is None:
+            logger.critical('Asked to retry for navroute but also no set time to compare? This is a bug.')
+            return False
+
+        if (file := self._parse_navroute_file()) is None:
+            logger.debug(
+                'Failed to parse NavRoute.json. '
+                + ('Trying again' if self._navroute_retries_remaining > 0 else 'Giving up')
+            )
+            return False
+
+        # _parse_navroute_file verifies that this exists for us
+        file_time = self._parse_journal_timestamp(file['timestamp'])
+        if abs(file_time - self._last_navroute_journal_timestamp) > MAX_NAVROUTE_DISCREPANCY:
+            logger.debug(
+                f'Time discrepancy of more than {MAX_NAVROUTE_DISCREPANCY}s --'
+                f' ({abs(file_time - self._last_navroute_journal_timestamp)}).'
+                f' {"Trying again" if self._navroute_retries_remaining > 0 else "Giving up"}.'
+            )
+            return False
+
+        # everything is good, lets set what we need to and make sure we dont try again
+        logger.info('Successfully read NavRoute file for last NavRoute event.')
+        self.state['NavRoute'] = file
+        self._navroute_retries_remaining = 0
+        self._last_navroute_journal_timestamp = None
+        return True
 
 
 # singleton

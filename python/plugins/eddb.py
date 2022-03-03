@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any, Optional
 import requests
 
 import EDMCLogging
-import plug
 from config import config
 
 if TYPE_CHECKING:

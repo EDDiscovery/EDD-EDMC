@@ -3,18 +3,18 @@
 
 import contextlib
 import logging
+import sys
 import tkinter as tk
 import webbrowser
-from os.path import exists, expanduser, expandvars, join, normpath
-from sys import platform
+from os.path import expanduser, expandvars, join, normpath
 from tkinter import colorchooser as tkColorChooser  # type: ignore # noqa: N812
 from tkinter import ttk
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Optional, Type, Union
+from typing import TYPE_CHECKING, Callable, Optional, Type, Union
 
 import myNotebook as nb  # noqa: N813
 import plug
-from config import applongname, appversion_nobuild, config
+from config import appversion_nobuild, config
 from EDMCLogging import edmclogger, get_main_logger
 from l10n import Translations
 from monitor import monitor
@@ -153,7 +153,7 @@ class AutoInc(contextlib.AbstractContextManager):
         return None
 
 
-if platform == 'darwin':
+if sys.platform == 'darwin':
     import objc  # type: ignore
     from Foundation import NSFileManager  # type: ignore
     try:
@@ -178,7 +178,7 @@ if platform == 'darwin':
 
     was_accessible_at_launch = AXIsProcessTrusted()  # type: ignore
 
-elif platform == 'win32':
+elif sys.platform == 'win32':
     import ctypes
     import winreg
     from ctypes.wintypes import HINSTANCE, HWND, LPARAM, LPCWSTR, LPVOID, LPWSTR, MAX_PATH, POINT, RECT, SIZE, UINT
@@ -245,7 +245,7 @@ class PreferencesDialog(tk.Toplevel):
 
         self.parent = parent
         self.callback = callback
-        if platform == 'darwin':
+        if sys.platform == 'darwin':
             # LANG: File > Preferences menu entry for macOS
             self.title(_('Preferences'))
 
@@ -257,15 +257,15 @@ class PreferencesDialog(tk.Toplevel):
             self.transient(parent)
 
         # position over parent
-        if platform != 'darwin' or parent.winfo_rooty() > 0:  # http://core.tcl.tk/tk/tktview/c84f660833546b1b84e7
+        if sys.platform != 'darwin' or parent.winfo_rooty() > 0:  # http://core.tcl.tk/tk/tktview/c84f660833546b1b84e7
             # TODO this is fixed supposedly.
             self.geometry(f'+{parent.winfo_rootx()}+{parent.winfo_rooty()}')
 
         # remove decoration
-        if platform == 'win32':
+        if sys.platform == 'win32':
             self.attributes('-toolwindow', tk.TRUE)
 
-        elif platform == 'darwin':
+        elif sys.platform == 'darwin':
             # http://wiki.tcl.tk/13428
             parent.call('tk::unsupported::MacWindowStyle', 'style', self, 'utility')
 
@@ -293,7 +293,7 @@ class PreferencesDialog(tk.Toplevel):
         self.__setup_appearance_tab(notebook)
         self.__setup_plugin_tab(notebook)
 
-        if platform == 'darwin':
+        if sys.platform == 'darwin':
             self.protocol("WM_DELETE_WINDOW", self.apply)  # close button applies changes
 
         else:
@@ -318,7 +318,7 @@ class PreferencesDialog(tk.Toplevel):
         self.grab_set()
 
         # Ensure fully on-screen
-        if platform == 'win32' and CalculatePopupWindowPosition:
+        if sys.platform == 'win32' and CalculatePopupWindowPosition:
             position = RECT()
             GetWindowRect(GetParent(self.winfo_id()), position)
             if CalculatePopupWindowPosition(
@@ -375,7 +375,7 @@ class PreferencesDialog(tk.Toplevel):
         self.outdir_entry = nb.Entry(output_frame, takefocus=False)
         self.outdir_entry.grid(columnspan=2, padx=self.PADX, pady=(0, self.PADY), sticky=tk.EW, row=row.get())
 
-        if platform == 'darwin':
+        if sys.platform == 'darwin':
             text = (_('Change...'))  # LANG: macOS Preferences - files location selection button
 
         else:
@@ -425,7 +425,11 @@ class PreferencesDialog(tk.Toplevel):
 
         self.logdir_entry.grid(columnspan=4, padx=self.PADX, pady=(0, self.PADY), sticky=tk.EW, row=row.get())
 
-        text = (_('Browse...'))  # LANG: NOT-macOS Setting - files location selection button
+        if sys.platform == 'darwin':
+            text = (_('Change...'))  # LANG: macOS Preferences - files location selection button
+
+        else:
+            text = (_('Browse...'))  # LANG: NOT-macOS Setting - files location selection button
 
         self.logbutton = nb.Button(
             config_frame,
@@ -631,7 +635,7 @@ class PreferencesDialog(tk.Toplevel):
             appearance_frame, text=_('Dark'), variable=self.theme, value=1, command=self.themevarchanged
         ).grid(columnspan=3, padx=self.BUTTONX, sticky=tk.W, row=row.get())
 
-        if platform == 'win32':
+        if sys.platform == 'win32':
             nb.Radiobutton(
                 appearance_frame,
                 # LANG: Label for 'Transparent' theme radio button
@@ -760,7 +764,7 @@ class PreferencesDialog(tk.Toplevel):
         )
         self.ontop_button.grid(columnspan=3, padx=self.BUTTONX, sticky=tk.W, row=row.get())  # Appearance setting
 
-        if platform == 'win32':
+        if sys.platform == 'win32':
             nb.Checkbutton(
                 appearance_frame,
                 # LANG: Appearance option for Windows "minimize to system tray"
@@ -887,7 +891,7 @@ class PreferencesDialog(tk.Toplevel):
     def tabchanged(self, event: tk.Event) -> None:
         """Handle preferences active tab changing."""
         self.outvarchanged()
-        if platform == 'darwin':
+        if sys.platform == 'darwin':
             # Hack to recompute size so that buttons show up under Mojave
             notebook = event.widget
             frame = self.nametowidget(notebook.winfo_parent())
@@ -915,9 +919,8 @@ class PreferencesDialog(tk.Toplevel):
 
         # If encoding isn't UTF-8 we can't use the tkinter dialog
         current_locale = locale.getlocale(locale.LC_CTYPE)
-        from sys import platform as sys_platform
         directory = None
-        if sys_platform == 'win32' and current_locale[1] not in ('utf8', 'UTF8', 'utf-8', 'UTF-8'):
+        if sys.platform == 'win32' and current_locale[1] not in ('utf8', 'UTF8', 'utf-8', 'UTF-8'):
             def browsecallback(hwnd, uMsg, lParam, lpData):  # noqa: N803 # Windows API convention
                 # set initial folder
                 if uMsg == BFFM_INITIALIZED and lpData:
@@ -963,7 +966,7 @@ class PreferencesDialog(tk.Toplevel):
         # TODO: This is awful.
         entryfield['state'] = tk.NORMAL  # must be writable to update
         entryfield.delete(0, tk.END)
-        if platform == 'win32':
+        if sys.platform == 'win32':
             start = len(config.home.split('\\')) if pathvar.get().lower().startswith(config.home.lower()) else 0
             display = []
             components = normpath(pathvar.get()).split('\\')
@@ -984,7 +987,7 @@ class PreferencesDialog(tk.Toplevel):
             entryfield.insert(0, '\\'.join(display))
 
         #                                                   None if path doesn't exist
-        elif platform == 'darwin' and NSFileManager.defaultManager().componentsToDisplayForPath_(pathvar.get()):
+        elif sys.platform == 'darwin' and NSFileManager.defaultManager().componentsToDisplayForPath_(pathvar.get()):
             if pathvar.get().startswith(config.home):
                 display = ['~'] + NSFileManager.defaultManager().componentsToDisplayForPath_(pathvar.get())[
                     len(NSFileManager.defaultManager().componentsToDisplayForPath_(config.home)):
@@ -1104,3 +1107,25 @@ class PreferencesDialog(tk.Toplevel):
 
         self.parent.wm_attributes('-topmost', 1 if config.get_int('always_ontop') else 0)
         self.destroy()
+
+    if sys.platform == 'darwin':
+        def enableshortcuts(self) -> None:
+            """Set up macOS preferences shortcut."""
+            self.apply()
+            # popup System Preferences dialog
+            try:
+                # http://stackoverflow.com/questions/6652598/cocoa-button-opens-a-system-preference-page/6658201
+                from ScriptingBridge import SBApplication  # type: ignore
+                sysprefs = 'com.apple.systempreferences'
+                prefs = SBApplication.applicationWithBundleIdentifier_(sysprefs)
+                pane = [x for x in prefs.panes() if x.id() == 'com.apple.preference.security'][0]
+                prefs.setCurrentPane_(pane)
+                anchor = [x for x in pane.anchors() if x.name() == 'Privacy_Accessibility'][0]
+                anchor.reveal()
+                prefs.activate()
+
+            except Exception:
+                AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+
+            if not config.shutting_down:
+                self.parent.event_generate('<<Quit>>', when="tail")

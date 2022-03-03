@@ -1,11 +1,11 @@
 """Inara Sync."""
 import tkinter as tk
-from typing import TYPE_CHECKING, Any, Callable, Deque, Dict, List, Mapping, NamedTuple, Optional
-from typing import Sequence, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import cast
 
 import requests
 
-from config import applongname, appversion, config
+from config import config
 from EDMCLogging import get_main_logger
 
 logger = get_main_logger()
