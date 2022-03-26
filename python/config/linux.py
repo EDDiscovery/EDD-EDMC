@@ -32,7 +32,7 @@ class LinuxConfig(AbstractConfig):
 
         self.internal_plugin_dir_path = self.respath_path / 'plugins'
         self.default_journal_dir_path = None  # type: ignore
-        self.identifier = f'uk.org.marginal.{appname.lower()}'  # TODO: Unused?
+        self.identifier = f'eddiscovery.{appname.lower()}'  # TODO: Unused?
 
         config_home = pathlib.Path(os.getenv('XDG_CONFIG_HOME', default='~/.config')).expanduser()
 

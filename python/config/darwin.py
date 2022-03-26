@@ -42,7 +42,7 @@ class MacConfig(AbstractConfig):
             self.internal_plugin_dir_path = file_dir / 'plugins'
             self.respath_path = file_dir
 
-            self.identifier = f'uk.org.marginal.{appname.lower()}'
+            self.identifier = f'eddiscovery.{appname.lower()}'
             NSBundle.mainBundle().infoDictionary()['CFBundleIdentifier'] = self.identifier
 
         self.default_journal_dir_path = support_path / 'Frontier Developments' / 'Elite Dangerous'

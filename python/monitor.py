@@ -87,8 +87,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         # TODO(A_D): A bunch of these should be switched to default values (eg '' for strings) and no longer be Optional
         FileSystemEventHandler.__init__(self)  # futureproofing - not need for current version of watchdog
         self.root: 'tkinter.Tk' = None  # type: ignore # Don't use Optional[] - mypy thinks no methods
-        self.currentdir: Optional[str] = None  # The actual logdir that we're monitoring
-        self.jsondir: Optional[str] = None
+        self.current_dir: Optional[str] = None  # The actual logdir that we're monitoring
         self.logfile: Optional[str] = None
         self.observer: Optional['Observer'] = None
         self.observed = None  # a watchdog ObservedWatch, or None if polling
@@ -197,11 +196,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         """
         logger.debug('Begin...')
         self.root = root  # type: ignore
-        self.currentdir = config.app_dir
-        journal_dir = config.get_str('journaldir')
-        if journal_dir == '' or journal_dir is None:
-            journal_dir = config.default_journal_dir
-        self.jsondir = expanduser(journal_dir)
+        self.current_dir = config.app_dir
 
         stored = join(config.app_dir, "stored.edd")
         if os.path.exists(stored):
@@ -216,10 +211,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
         if not self.observed:
             logger.debug('Not observed and not polling, setting observed...')
-            self.observed = self.observer.schedule(self, self.currentdir)  # type: ignore
+            self.observed = self.observer.schedule(self, self.current_dir)  # type: ignore
             logger.debug('Done')
 
-        logger.info(f'Monitoring EDD Log Folder: "{self.currentdir}"')
+        logger.info(f'Monitoring EDD Log Folder: "{self.current_dir}"')
 
         if not self.running():
             logger.debug('Starting Journal worker thread...')
@@ -235,7 +230,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
         """Stop journal monitoring."""
         logger.debug('Stopping monitoring Journal')
 
-        self.currentdir = None
+        self.current_dir = None
         self.version = None
         self.mode = None
         self.group = None
@@ -348,20 +343,20 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
             # Check whether new log file started, e.g. client (re)started.
             if emitter and emitter.is_alive():
-                newlogfile = self.logfile  # updated by on_created watchdog callback
+                new_journal_file = self.logfile  # updated by on_created watchdog callback
             else:
                 # Poll
                 try:
                     logfiles = sorted(
-                        (x for x in listdir(self.currentdir) if self._RE_LOGFILE.search(x)),
+                        (x for x in listdir(self.current_dir) if self._RE_LOGFILE.search(x)),
                         key=lambda x: x.split('.')[1:]
                     )
 
-                    newlogfile = join(self.currentdir, logfiles[-1]) if logfiles else None  # type: ignore
+                    new_journal_file = join(self.current_dir, logfiles[-1]) if logfiles else None  # type: ignore
 
                 except Exception:
                     logger.exception('Failed to find latest logfile')
-                    newlogfile = None
+                    new_journal_file = None
 
             if logfile:
                 loghandle.seek(0, SEEK_END)		  # required to make macOS notice log change over SMB
@@ -390,11 +385,11 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
                 log_pos = loghandle.tell()
 
-            if logfile != newlogfile:
+            if logfile != new_journal_file:
                 for _ in range(10):
                     logger.trace_if('journal.file', "****")
-                logger.info(f'New Journal File. Was "{logfile}", now "{newlogfile}"')
-                logfile = newlogfile
+                logger.info(f'New Journal File. Was "{logfile}", now "{new_journal_file}"')
+                logfile = new_journal_file
                 if loghandle:
                     loghandle.close()
 
@@ -497,8 +492,6 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
             # Preserve property order because why not?
             entry: MutableMapping[str, Any] = json.loads(line, object_pairs_hook=OrderedDict)
             entry['timestamp']  # we expect this to exist # TODO: replace with assert? or an if key in check
-
-            self.__navroute_retry()
 
             event_type = entry['event'].lower()
             if event_type == 'fileheader':
@@ -862,11 +855,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
             elif event_type == 'cargo' and entry.get('Vessel') == 'Ship':
                 self.state['Cargo'] = defaultdict(int)
-                # From 3.3 full Cargo event (after the first one) is written to a separate file
-                if 'Inventory' not in entry:
-                    with open(join(self.jsondir, 'Cargo.json'), 'rb') as h:  # type: ignore
-                        entry = json.load(h, object_pairs_hook=OrderedDict)  # Preserve property order because why not?
-                        self.state['CargoJSON'] = entry
+                self.state['CargoJSON'] = entry
 
                 clean = self.coalesce_cargo(entry['Inventory'])
 
@@ -888,35 +877,7 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 # written to a separate shiplocker.json file - other updates will just update that file and mention it
                 # has changed with an empty shiplocker event in the main journal.
 
-                # Always attempt loading of this, but if it fails we'll hope this was
-                # a startup/boarding version and thus `entry` contains
-                # the data anyway.
-                currentdir_path = pathlib.Path(str(self.jsondir))
-                shiplocker_filename = currentdir_path / 'ShipLocker.json'
-                shiplocker_max_attempts = 5
-                shiplocker_fail_sleep = 0.01
-                attempts = 0
-                while attempts < shiplocker_max_attempts:
-                    attempts += 1
-                    try:
-                        with open(shiplocker_filename, 'rb') as h:  # type: ignore
-                            entry = json.load(h, object_pairs_hook=OrderedDict)
-                            self.state['ShipLockerJSON'] = entry
-                            break
-
-                    except FileNotFoundError:
-                        logger.warning('ShipLocker event but no ShipLocker.json file')
-                        sleep(shiplocker_fail_sleep)
-                        pass
-
-                    except json.JSONDecodeError as e:
-                        logger.warning(f'ShipLocker.json failed to decode:\n{e!r}\n')
-                        sleep(shiplocker_fail_sleep)
-                        pass
-
-                else:
-                    logger.warning(f'Failed to load & decode shiplocker after {shiplocker_max_attempts} tries. '
-                                   'Giving up.')
+                self.state['ShipLockerJSON'] = entry
 
                 if not all(t in entry for t in ('Components', 'Consumables', 'Data', 'Items')):
                     logger.warning('ShipLocker event is missing at least one category')
@@ -958,59 +919,30 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 # This event writes the same data as a backpack event. It will also be followed by a ShipLocker
                 # but that follows normal behaviour in its handler.
 
-                # TODO: v31 doc says this is`backpack.json` ... but Howard Chalkley
-                #       said it's `Backpack.json`
-                backpack_file = pathlib.Path(str(self.jsondir)) / 'Backpack.json'
-                backpack_data = None
+                self.state['BackPackJSON'] = entry
 
-                if not backpack_file.exists():
-                    logger.warning(f'Failed to find backpack.json file as it appears not to exist? {backpack_file=}')
+                # Assume this reflects the current state when written
+                self.backpack_set_empty()
 
-                else:
-                    backpack_data = backpack_file.read_bytes()
+                clean_components = self.coalesce_cargo(entry['Components'])
+                self.state['BackPack']['Component'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_components}
+                )
 
-                parsed = None
+                clean_consumables = self.coalesce_cargo(entry['Consumables'])
+                self.state['BackPack']['Consumable'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_consumables}
+                )
 
-                if backpack_data is None:
-                    logger.warning('Unable to read backpack data!')
+                clean_items = self.coalesce_cargo(entry['Items'])
+                self.state['BackPack']['Item'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_items}
+                )
 
-                elif len(backpack_data) == 0:
-                    logger.warning('Backpack.json was empty when we read it!')
-
-                else:
-                    try:
-                        parsed = json.loads(backpack_data)
-
-                    except json.JSONDecodeError:
-                        logger.exception('Unable to parse Backpack.json')
-
-                if parsed is not None:
-                    entry = parsed  # set entry so that it ends up in plugins with the right data
-                    # Store in monitor.state
-                    self.state['BackpackJSON'] = entry
-
-                    # Assume this reflects the current state when written
-                    self.backpack_set_empty()
-
-                    clean_components = self.coalesce_cargo(entry['Components'])
-                    self.state['BackPack']['Component'].update(
-                        {self.canonicalise(x['Name']): x['Count'] for x in clean_components}
-                    )
-
-                    clean_consumables = self.coalesce_cargo(entry['Consumables'])
-                    self.state['BackPack']['Consumable'].update(
-                        {self.canonicalise(x['Name']): x['Count'] for x in clean_consumables}
-                    )
-
-                    clean_items = self.coalesce_cargo(entry['Items'])
-                    self.state['BackPack']['Item'].update(
-                        {self.canonicalise(x['Name']): x['Count'] for x in clean_items}
-                    )
-
-                    clean_data = self.coalesce_cargo(entry['Data'])
-                    self.state['BackPack']['Data'].update(
-                        {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
-                    )
+                clean_data = self.coalesce_cargo(entry['Data'])
+                self.state['BackPack']['Data'].update(
+                    {self.canonicalise(x['Name']): x['Count'] for x in clean_data}
+                )
 
             elif event_type == 'backpackchange':
                 # Changes to Odyssey Backpack contents *other* than from a Transfer
@@ -1316,25 +1248,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
                 self.state['Taxi'] = False
 
             elif event_type == 'navroute' and not self.catching_up:
-                # assume we've failed out the gate, then pull it back if things are fine
-                self._last_navroute_journal_timestamp = mktime(strptime(entry['timestamp'], '%Y-%m-%dT%H:%M:%SZ'))
-                self._navroute_retries_remaining = 11
-
-                # Added in ED 3.7 - multi-hop route details in NavRoute.json
-                # rather than duplicating this, lets just call the function
-                if self.__navroute_retry():
-                    entry = self.state['NavRoute']
+                self.state['NavRoute'] = entry
 
             elif event_type == 'moduleinfo':
-                with open(join(self.jsondir, 'ModulesInfo.json'), 'rb') as mf:  # type: ignore
-                    try:
-                        entry = json.load(mf)
-
-                    except json.JSONDecodeError:
-                        logger.exception('Failed decoding ModulesInfo.json', exc_info=True)
-
-                    else:
-                        self.state['ModuleInfo'] = entry
+                self.state['ModuleInfo'] = entry
 
             elif event_type in ('collectcargo', 'marketbuy', 'buydrones', 'miningrefined'):
                 commodity = self.canonicalise(entry['Type'])
@@ -2166,71 +2083,10 @@ class EDLogs(FileSystemEventHandler):  # type: ignore # See below
 
         return slots
 
-    def _parse_navroute_file(self) -> Optional[dict[str, Any]]:
-        """Read and parse NavRoute.json."""
-        if self.jsondir is None:
-            raise ValueError('jsondir unset')
-
-        try:
-
-            with open(join(self.jsondir, 'NavRoute.json'), 'r') as f:
-                raw = f.read()
-
-        except Exception as e:
-            logger.exception(f'Could not open navroute file. Bailing: {e}')
-            return None
-
-        try:
-            data = json.loads(raw)
-
-        except json.JSONDecodeError:
-            logger.exception('Failed to decode NavRoute.json', exc_info=True)
-            return None
-
-        if 'timestamp' not in data:  # quick sanity check
-            return None
-
-        return data
-
     @staticmethod
     def _parse_journal_timestamp(source: str) -> float:
         return mktime(strptime(source, '%Y-%m-%dT%H:%M:%SZ'))
 
-    def __navroute_retry(self) -> bool:
-        """Retry reading navroute files."""
-        if self._navroute_retries_remaining == 0:
-            return False
-
-        logger.info(f'Navroute read retry [{self._navroute_retries_remaining}]')
-        self._navroute_retries_remaining -= 1
-
-        if self._last_navroute_journal_timestamp is None:
-            logger.critical('Asked to retry for navroute but also no set time to compare? This is a bug.')
-            return False
-
-        if (file := self._parse_navroute_file()) is None:
-            logger.debug(
-                'Failed to parse NavRoute.json. '
-                + ('Trying again' if self._navroute_retries_remaining > 0 else 'Giving up')
-            )
-            return False
-
-        # _parse_navroute_file verifies that this exists for us
-        file_time = self._parse_journal_timestamp(file['timestamp'])
-        if abs(file_time - self._last_navroute_journal_timestamp) > MAX_NAVROUTE_DISCREPANCY:
-            logger.debug(
-                f'Time discrepancy of more than {MAX_NAVROUTE_DISCREPANCY}s --'
-                f' ({abs(file_time - self._last_navroute_journal_timestamp)}).'
-                f' {"Trying again" if self._navroute_retries_remaining > 0 else "Giving up"}.'
-            )
-            return False
-
-        # everything is good, lets set what we need to and make sure we dont try again
-        logger.info('Successfully read NavRoute file for last NavRoute event.')
-        self.state['NavRoute'] = file
-        self._navroute_retries_remaining = 0
-        self._last_navroute_journal_timestamp = None
-        return True
 
 
 # singleton

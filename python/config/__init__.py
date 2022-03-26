@@ -50,10 +50,10 @@ appcmdname = 'EDMC'
 # <https://semver.org/#semantic-versioning-specification-semver>
 # Major.Minor.Patch(-prerelease)(+buildmetadata)
 # NB: Do *not* import this, use the functions appversion() and appversion_nobuild()
-_static_appversion = '1.3.2'
-_edmc_compat_version = '5.3.1'
+_static_appversion = '1.3.4'
+_edmc_compat_version = '5.3.4'
 _cached_version: Optional[semantic_version.Version] = None
-copyright = 'Copyright © 2016-2021 EDDiscovery development team'
+copyright = 'Copyright © 2016-2022 EDDiscovery development team'
 
 update_feed = 'unused'
 update_interval = 8*60*60

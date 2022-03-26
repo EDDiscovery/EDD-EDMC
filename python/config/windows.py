@@ -73,7 +73,7 @@ class WinConfig(AbstractConfig):
 
         try:
             self.__reg_handle: winreg.HKEYType = create_key_defaults(
-                sub_key=r'Software\Marginal\EDMarketConnector'
+                sub_key=r'Software\EDD\EDD-EDMC'
             )
             if do_winsparkle:
                 self.__setup_winsparkle()
@@ -95,7 +95,7 @@ class WinConfig(AbstractConfig):
             access=winreg.KEY_ALL_ACCESS | winreg.KEY_WOW64_64KEY,
         )
         try:
-            edcd_handle: winreg.HKEYType = create_key_defaults(sub_key=r'Software\EDCD\EDMarketConnector')
+            edcd_handle: winreg.HKEYType = create_key_defaults(sub_key=r'Software\EDD\EDD-EDMC')
             winsparkle_reg: winreg.HKEYType = winreg.CreateKeyEx(
                 edcd_handle, sub_key='WinSparkle', access=winreg.KEY_ALL_ACCESS | winreg.KEY_WOW64_64KEY
             )
