@@ -43,7 +43,7 @@ namespace EDMCHarness
             System.Diagnostics.Debug.WriteLine("Init func " + vstr + " " + dllfolderp);
 
             string[] vopts = vstr.Split(';');
-            int jv = vopts.ContainsIn("JOURNALVERSION=2");
+            int jv = vopts.ContainsIn("JOURNALVERSION=");
             if (jv == -1 || vopts[jv].Substring(15).InvariantParseInt(0) < 2)       // check journal version exists and is at 2 mininum
                 return "!PY Harness requires a more recent host program";
 
