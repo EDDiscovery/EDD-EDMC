@@ -1,10 +1,32 @@
 """Coriolis ship export."""
 
+# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $#
+# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $#
+#
+# This is an EDMC 'core' plugin.
+#
+# All EDMC plugins are *dynamically* loaded at run-time.
+#
+# We build for Windows using `py2exe`.
+#
+# `py2exe` can't possibly know about anything in the dynamically loaded
+# core plugins.
+#
+# Thus you **MUST** check if any imports you add in this file are only
+# referenced in this file (or only in any other core plugin), and if so...
+#
+#     YOU MUST ENSURE THAT PERTINENT ADJUSTMENTS ARE MADE IN
+#     `Build-exe-and-msi.py` SO AS TO ENSURE THE FILES ARE ACTUALLY PRESENT
+#     IN AN END-USER INSTALLATION ON WINDOWS.
+#
+# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $#
+# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $# ! $#
 import base64
 import gzip
 import io
 import json
 import tkinter as tk
+from tkinter import ttk
 from typing import TYPE_CHECKING, Union
 
 import myNotebook as nb  # noqa: N813 # its not my fault.
@@ -48,51 +70,64 @@ def plugin_start3(path: str) -> str:
     normal_textvar.set(value=normal_url)
     beta_textvar.set(value=beta_url)
     override_textvar.set(
-        value={'auto': _('Auto'), 'normal': _('Normal'), 'beta': _('Beta')}.get(override_mode, _('Auto'))
+        value={
+            'auto': _('Auto'),  # LANG: 'Auto' label for Coriolis site override selection
+            'normal': _('Normal'),  # LANG: 'Normal' label for Coriolis site override selection
+            'beta': _('Beta')  # LANG: 'Beta' label for Coriolis site override selection
+        }.get(override_mode, _('Auto'))  # LANG: 'Auto' label for Coriolis site override selection
     )
 
     return 'Coriolis'
 
 
-def plugin_prefs(parent: tk.Widget, cmdr: str, is_beta: bool) -> tk.Frame:
+def plugin_prefs(parent: ttk.Notebook, cmdr: str | None, is_beta: bool) -> tk.Frame:
     """Set up plugin preferences."""
     PADX = 10  # noqa: N806
 
     conf_frame = nb.Frame(parent)
     conf_frame.columnconfigure(index=1, weight=1)
     cur_row = 0
+    # LANG: Settings>Coriolis: Help/hint for changing coriolis URLs
     nb.Label(conf_frame, text=_(
         "Set the URL to use with coriolis.io ship loadouts. Note that this MUST end with '/import?data='"
     )).grid(sticky=tk.EW, row=cur_row, column=0, columnspan=3)
     cur_row += 1
 
+    # LANG: Settings>Coriolis: Label for 'NOT alpha/beta game version' URL
     nb.Label(conf_frame, text=_('Normal URL')).grid(sticky=tk.W, row=cur_row, column=0, padx=PADX)
     nb.Entry(conf_frame, textvariable=normal_textvar).grid(sticky=tk.EW, row=cur_row, column=1, padx=PADX)
+    # LANG: Generic 'Reset' button label
     nb.Button(conf_frame, text=_("Reset"), command=lambda: normal_textvar.set(value=DEFAULT_NORMAL_URL)).grid(
         sticky=tk.W, row=cur_row, column=2, padx=PADX
     )
     cur_row += 1
 
+    # LANG: Settings>Coriolis: Label for 'alpha/beta game version' URL
     nb.Label(conf_frame, text=_('Beta URL')).grid(sticky=tk.W, row=cur_row, column=0, padx=PADX)
     nb.Entry(conf_frame, textvariable=beta_textvar).grid(sticky=tk.EW, row=cur_row, column=1, padx=PADX)
+    # LANG: Generic 'Reset' button label
     nb.Button(conf_frame, text=_('Reset'), command=lambda: beta_textvar.set(value=DEFAULT_BETA_URL)).grid(
         sticky=tk.W, row=cur_row, column=2, padx=PADX
     )
     cur_row += 1
 
+    # TODO: This needs a help/hint text to be sure users know what it's for.
+    # LANG: Settings>Coriolis: Label for selection of using Normal, Beta or 'auto' Coriolis URL
     nb.Label(conf_frame, text=_('Override Beta/Normal Selection')).grid(sticky=tk.W, row=cur_row, column=0, padx=PADX)
     nb.OptionMenu(
         conf_frame,
         override_textvar,
         override_textvar.get(),
-        _('Normal'), _('Beta'), _('Auto')
+        _('Normal'),  # LANG: 'Normal' label for Coriolis site override selection
+        _('Beta'),  # LANG: 'Beta' label for Coriolis site override selection
+        _('Auto')  # LANG: 'Auto' label for Coriolis site override selection
     ).grid(sticky=tk.W, row=cur_row, column=1, padx=PADX)
     cur_row += 1
 
     return conf_frame
 
 
-def prefs_changed(cmdr: str, is_beta: bool) -> None:
+def prefs_changed(cmdr: str | None, is_beta: bool) -> None:
     """Update URLs."""
     global normal_url, beta_url, override_mode
     normal_url = normal_textvar.get()
@@ -107,7 +142,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     if override_mode not in ('beta', 'normal', 'auto'):
         logger.warning(f'Unexpected value {override_mode=!r}. defaulting to "auto"')
         override_mode = 'auto'
-        override_textvar.set(value=_('Auto'))
+        override_textvar.set(value=_('Auto'))  # LANG: 'Auto' label for Coriolis site override selection
 
     config.set('coriolis_normal_url', normal_url)
     config.set('coriolis_beta_url', beta_url)
@@ -117,6 +152,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
 def _get_target_url(is_beta: bool) -> str:
     global override_mode
     if override_mode not in ('auto', 'normal', 'beta'):
+        # LANG: Settings>Coriolis - invalid override mode found
         show_error(_('Invalid Coriolis override mode!'))
         logger.warning(f'Unexpected override mode {override_mode!r}! defaulting to auto!')
         override_mode = 'auto'

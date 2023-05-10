@@ -50,10 +50,10 @@ appcmdname = 'EDMC'
 # <https://semver.org/#semantic-versioning-specification-semver>
 # Major.Minor.Patch(-prerelease)(+buildmetadata)
 # NB: Do *not* import this, use the functions appversion() and appversion_nobuild()
-_static_appversion = '1.3.4'
-_edmc_compat_version = '5.3.4'
+_static_appversion = '1.4.0'
+_edmc_compat_version = '5.8.0'
 _cached_version: Optional[semantic_version.Version] = None
-copyright = 'Copyright © 2016-2022 EDDiscovery development team'
+copyright = 'Copyright © 2016-2023 EDDiscovery development team'
 
 update_feed = 'unused'
 update_interval = 8*60*60
@@ -162,7 +162,7 @@ def appversion_nobuild() -> semantic_version.Version:
 class AbstractConfig(abc.ABC):
     """Abstract root class of all platform specific Config implementations."""
 
-    OUT_MKT_EDDN = 1
+    OUT_EDDN_SEND_STATION_DATA = 1
     # OUT_MKT_BPC = 2	# No longer supported
     OUT_MKT_TD = 4
     OUT_MKT_CSV = 8
@@ -171,12 +171,12 @@ class AbstractConfig(abc.ABC):
     # OUT_SYS_FILE = 32	# No longer supported
     # OUT_STAT = 64	# No longer available
     # OUT_SHIP_CORIOLIS = 128	# Replaced by OUT_SHIP
-    OUT_STATION_ANY = OUT_MKT_EDDN | OUT_MKT_TD | OUT_MKT_CSV
     # OUT_SYS_EDSM = 256  # Now a plugin
     # OUT_SYS_AUTO = 512  # Now always automatic
     OUT_MKT_MANUAL = 1024
-    OUT_SYS_EDDN = 2048
-    OUT_SYS_DELAY = 4096
+    OUT_EDDN_SEND_NON_STATION = 2048
+    OUT_EDDN_DELAY = 4096
+    OUT_STATION_ANY = OUT_EDDN_SEND_STATION_DATA | OUT_MKT_TD | OUT_MKT_CSV
 
     app_dir_path: pathlib.Path
     plugin_dir_path: pathlib.Path
@@ -293,7 +293,7 @@ class AbstractConfig(abc.ABC):
 
     @staticmethod
     def _suppress_call(
-        func: Callable[..., _T], exceptions: Union[Type[BaseException], List[Type[BaseException]]] = Exception,
+        func: Callable[..., _T], exceptions: Type[BaseException] | list[Type[BaseException]] = Exception,
         *args: Any, **kwargs: Any
     ) -> Optional[_T]:
         if exceptions is None:
@@ -307,7 +307,10 @@ class AbstractConfig(abc.ABC):
 
         return None
 
-    def get(self, key: str, default: Union[list, str, bool, int] = None) -> Union[list, str, bool, int]:
+    def get(
+        self, key: str,
+        default: list | str | bool | int | None = None
+    ) -> list | str | bool | int | None:
         """
         Return the data for the requested key, or a default.
 
@@ -319,22 +322,22 @@ class AbstractConfig(abc.ABC):
         warnings.warn(DeprecationWarning('get is Deprecated. use the specific getter for your type'))
         logger.debug('Attempt to use Deprecated get() method\n' + ''.join(traceback.format_stack()))
 
-        if (l := self._suppress_call(self.get_list, ValueError, key, default=None)) is not None:
-            return l
+        if (a_list := self._suppress_call(self.get_list, ValueError, key, default=None)) is not None:
+            return a_list
 
-        elif (s := self._suppress_call(self.get_str, ValueError, key, default=None)) is not None:
-            return s
+        elif (a_str := self._suppress_call(self.get_str, ValueError, key, default=None)) is not None:
+            return a_str
 
-        elif (b := self._suppress_call(self.get_bool, ValueError, key, default=None)) is not None:
-            return b
+        elif (a_bool := self._suppress_call(self.get_bool, ValueError, key, default=None)) is not None:
+            return a_bool
 
-        elif (i := self._suppress_call(self.get_int, ValueError, key, default=None)) is not None:
-            return i
+        elif (an_int := self._suppress_call(self.get_int, ValueError, key, default=None)) is not None:
+            return an_int
 
         return default  # type: ignore
 
     @abstractmethod
-    def get_list(self, key: str, *, default: list = None) -> list:
+    def get_list(self, key: str, *, default: list | None = None) -> list:
         """
         Return the list referred to by the given key if it exists, or the default.
 
@@ -343,7 +346,7 @@ class AbstractConfig(abc.ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_str(self, key: str, *, default: str = None) -> str:
+    def get_str(self, key: str, *, default: str | None = None) -> str:
         """
         Return the string referred to by the given key if it exists, or the default.
 
@@ -356,7 +359,7 @@ class AbstractConfig(abc.ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_bool(self, key: str, *, default: bool = None) -> bool:
+    def get_bool(self, key: str, *, default: bool | None = None) -> bool:
         """
         Return the bool referred to by the given key if it exists, or the default.
 
@@ -396,7 +399,7 @@ class AbstractConfig(abc.ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def set(self, key: str, val: Union[int, str, List[str], bool]) -> None:
+    def set(self, key: str, val: int | str | list[str] | bool) -> None:
         """
         Set the given key's data to the given value.
 
@@ -454,19 +457,19 @@ def get_config(*args, **kwargs) -> AbstractConfig:
     :param kwargs: Args to be passed through to implementation.
     :return: Instance of the implementation.
     """
-    if sys.platform == "darwin":
+    if sys.platform == "darwin":  # pragma: sys-platform-darwin
         from .darwin import MacConfig
         return MacConfig(*args, **kwargs)
 
-    elif sys.platform == "win32":
+    elif sys.platform == "win32":  # pragma: sys-platform-win32
         from .windows import WinConfig
         return WinConfig(*args, **kwargs)
 
-    elif sys.platform == "linux":
+    elif sys.platform == "linux":  # pragma: sys-platform-linux
         from .linux import LinuxConfig
         return LinuxConfig(*args, **kwargs)
 
-    else:
+    else:  # pragma: sys-platform-not-known
         raise ValueError(f'Unknown platform: {sys.platform=}')
 
 

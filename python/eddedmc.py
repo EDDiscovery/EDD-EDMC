@@ -9,11 +9,12 @@ import pathlib
 import re
 import sys
 import threading
+import webbrowser
 from builtins import object, str
 from os import chdir, environ
 from os.path import dirname, join, isdir
 from time import time
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Literal, Optional, Tuple
 
 # Have this as early as possible for people running eddedmc.exe
 # from cmd.exe or a bat file or similar.  Else they might not be in the correct
@@ -31,7 +32,7 @@ else:
     # not frozen.
     chdir(pathlib.Path(__file__).parent)
 
-from constants import applongname, appname
+from constants import applongname, appname, protocolhandler_redirect
 
 # config will now cause an appname logger to be set up, so we need the
 # console redirect before this
@@ -46,13 +47,14 @@ if __name__ == '__main__':
         sys.stdout = sys.stderr = open(join(tempfile.gettempdir(), f'{appname}.log'), mode='wt', buffering=1)
     # TODO: Test: Make *sure* this redirect is working, else py2exe is going to cause an exit popup
 
+
 # These need to be after the stdout/err redirect because they will cause
 # logging to be set up.
 # isort: off
 from config import appversion, config
 # isort: on
 
-from EDMCLogging import logger
+from EDMCLogging import edmclogger, logger, logging
 
 # See EDMCLogging.py docs.
 # isort: off
@@ -77,7 +79,7 @@ from edmc_data import ship_name_map
 from l10n import Translations
 from monitor import monitor
 from theme import theme
-from ttkHyperlinkLabel import HyperlinkLabel, openurl
+from ttkHyperlinkLabel import HyperlinkLabel
 
 SERVER_RETRY = 5  # retry pause for Companion servers [s]
 
@@ -110,7 +112,7 @@ class Application(object):
     def __init__(self, master: tk.Tk):  # noqa: C901, CCR001 # TODO - can possibly factor something out
 
         self.w = master
-        self.w.title(appname)
+        self.w.title(applongname)
         self.minimizing = False
         self.w.rowconfigure(0, weight=1)
         self.w.columnconfigure(0, weight=1)
@@ -145,20 +147,21 @@ class Application(object):
         frame.grid(sticky=tk.NSEW)
         frame.columnconfigure(1, weight=1)
 
-        self.cmdr_label = tk.Label(frame)
+        self.cmdr_label = tk.Label(frame, name='cmdr_label')
         self.cmdr = tk.Label(frame, compound=tk.RIGHT, anchor=tk.W, name='cmdr')
-        self.ship_label = tk.Label(frame)
+        self.ship_label = tk.Label(frame, name='ship_label')
         self.ship = HyperlinkLabel(frame, compound=tk.RIGHT, url=self.shipyard_url, name='ship')
-        self.suit_label = tk.Label(frame)
+        self.suit_label = tk.Label(frame, name='suit_label')
         self.suit = tk.Label(frame, compound=tk.RIGHT, anchor=tk.W, name='suit')
-        self.system_label = tk.Label(frame)
+        self.system_label = tk.Label(frame, name='system_label')
         self.system = HyperlinkLabel(frame, compound=tk.RIGHT, url=self.system_url, popup_copy=True, name='system')
-        self.station_label = tk.Label(frame)
+        self.station_label = tk.Label(frame, name='station_label')
         self.station = HyperlinkLabel(frame, compound=tk.RIGHT, url=self.station_url, name='station')
         # system and station text is set/updated by the 'provider' plugins
         # eddb, edsm and inara.  Look for:
         #
-        # parent.children['system'] / parent.children['station']
+        # parent.nametowidget(f".{appname.lower()}.system")
+        # parent.nametowidget(f".{appname.lower()}.station")
 
         ui_row = 1
 
@@ -182,10 +185,26 @@ class Application(object):
         self.station.grid(row=ui_row, column=1, sticky=tk.EW)
         ui_row += 1
 
+        plugin_no = 0
         for plugin in plug.PLUGINS:
-            appitem = plugin.get_app(frame)
+            # Per plugin separator
+            plugin_sep = tk.Frame(
+                frame, highlightthickness=1, name=f"plugin_hr_{plugin_no + 1}"
+            )
+            # Per plugin frame, for it to use as its parent for own widgets
+            plugin_frame = tk.Frame(
+                frame,
+                name=f"plugin_{plugin_no + 1}"
+            )
+            appitem = plugin.get_app(plugin_frame)
             if appitem:
-                tk.Frame(frame, highlightthickness=1).grid(columnspan=2, sticky=tk.EW)  # separator
+                plugin_no += 1
+                plugin_sep.grid(columnspan=2, sticky=tk.EW)
+                ui_row = frame.grid_size()[1]
+                plugin_frame.grid(
+                    row=ui_row, columnspan=2, sticky=tk.NSEW
+                )
+                plugin_frame.columnconfigure(1, weight=1)
                 if isinstance(appitem, tuple) and len(appitem) == 2:
                     ui_row = frame.grid_size()[1]
                     appitem[0].grid(row=ui_row, column=0, sticky=tk.W)
@@ -194,12 +213,17 @@ class Application(object):
                 else:
                     appitem.grid(columnspan=2, sticky=tk.EW)
 
-        self.status = tk.Label(frame, name='status', anchor=tk.W)
+            else:
+                # This plugin didn't provide any UI, so drop the frames
+                plugin_frame.destroy()
+                plugin_sep.destroy()
 
+        self.status = tk.Label(frame, name='status', anchor=tk.W)
         self.status.grid(columnspan=2, sticky=tk.EW)
 
         for child in frame.winfo_children():
-            child.grid_configure(padx=self.PADX, pady=(sys.platform != 'win32' or isinstance(child, tk.Frame)) and 2 or 0)
+            child.grid_configure(padx=self.PADX, pady=(
+                sys.platform != 'win32' or isinstance(child, tk.Frame)) and 2 or 0)
 
         self.newversion_button = tk.Button(frame, text='NewVersion', width=28, default=tk.ACTIVE)	# Update button in main window
         row = frame.grid_size()[1]
@@ -243,9 +267,13 @@ class Application(object):
         # Alternate title bar and menu for dark theme
         self.theme_menubar = tk.Frame(frame)
         self.theme_menubar.columnconfigure(2, weight=1)
-        theme_titlebar = tk.Label(self.theme_menubar, text=applongname,
-                                  image=self.theme_icon, cursor='fleur',
-                                  anchor=tk.W, compound=tk.LEFT)
+        theme_titlebar = tk.Label(
+            self.theme_menubar,
+            name="alternate_titlebar",
+            text=applongname,
+            image=self.theme_icon, cursor='fleur',
+            anchor=tk.W, compound=tk.LEFT
+        )
         theme_titlebar.grid(columnspan=3, padx=2, sticky=tk.NSEW)
         self.drag_offset: Tuple[Optional[int], Optional[int]] = (None, None)
         theme_titlebar.bind('<Button-1>', self.drag_start)
@@ -326,7 +354,7 @@ class Application(object):
         self.w.protocol("WM_DELETE_WINDOW", self.onexit)
         self.w.bind('<Control-c>', self.copy)
 
-        self.postprefs()
+        self.postprefs(False)  # Companion login happens in callback from monitor
         self.toggle_suit_row(visible=False)
 
     def update_suit_text(self) -> None:
@@ -387,7 +415,7 @@ class Application(object):
             self.suit.grid_forget()
             self.suit_shown = False
 
-    def postprefs(self):
+    def postprefs(self, dologin: bool = True):
         """Perform necessary actions after the Preferences dialog is applied."""
         self.prefsdialog = None
         self.set_labels()  # in case language has changed
@@ -430,18 +458,6 @@ class Application(object):
 
         self.help_menu.entryconfigure(0, label=_("About {APP}").format(APP=applongname))  # LANG: Help > About App
 
-    # def getandsend(self, event=None):
-    #     # will be used if I bother to turn back on export
-    #     print("*** get and send - not implememented yet, turn on button above**")
-    # 
-    #     if config.getint('output') & (config.OUT_MKT_CSV|config.OUT_MKT_TD):
-    #         if not lastmarket is None:
-    #             print("Lastmarket set")
-    #             if config.getint('output') & config.OUT_MKT_CSV:    # would need to fix the exporters
-    #                 commodity.export(lastmarket, COMMODITY_CSV)
-    #             if config.getint('output') & config.OUT_MKT_TD:
-    #                 td.export(lastmarket)
-
     def journal_event(self, event):  # noqa: C901, CCR001 # Currently not easily broken up.
         """
         Handle a Journal event passed through event queue from monitor.py.
@@ -475,7 +491,7 @@ class Application(object):
                 if not config.get_list('cmdrs') or monitor.cmdr not in config.get_list('cmdrs'):
                     config.set('cmdrs', config.get_list('cmdrs', default=[]) + [monitor.cmdr])
 
-            if monitor.mode == 'CQC' and entry['event']:
+            if monitor.cmdr and monitor.mode == 'CQC' and entry['event']:
                 err = plug.notify_journal_entry_cqc(monitor.cmdr, monitor.is_beta, entry, monitor.state)
                 if err:
                     self.status['text'] = err
@@ -504,14 +520,18 @@ class Application(object):
                 # self.status['text'] = 'New version'
 
             # Plugins
-            err = plug.notify_journal_entry(monitor.cmdr,
-                                            monitor.is_beta,
-                                            monitor.system,
-                                            monitor.station,
-                                            entry,
-                                            monitor.state)
-            if err:
-                self.status['text'] = err
+            if monitor.cmdr:
+                err = plug.notify_journal_entry(
+                    monitor.cmdr,
+                    monitor.is_beta,
+                    monitor.state['SystemName'],
+                    monitor.state['StationName'],
+                    entry,
+                    monitor.state
+                )
+
+                if err:
+                    self.status['text'] = err
 
     def updatedetails(self, entry):
 
@@ -560,7 +580,7 @@ class Application(object):
 
             # Ensure the ship type/name text is clickable, if it should be.
             if monitor.state['Modules']:
-                ship_state = True
+                ship_state: Literal['normal', 'disabled'] = tk.NORMAL
 
             else:
                 ship_state = tk.DISABLED
@@ -578,7 +598,7 @@ class Application(object):
         self.update_suit_text()
         self.suit_show_if_set()
 
-        self.edit_menu.entryconfigure(0, state=monitor.system and tk.NORMAL or tk.DISABLED)  # Copy
+        self.edit_menu.entryconfigure(0, state=monitor.state['SystemName'] and tk.NORMAL or tk.DISABLED)  # Copy
 
         if entry['event'] in (
                 'Undocked',
@@ -608,17 +628,19 @@ class Application(object):
 
         entry = dashboard.status
         # Currently we don't do anything with these events
-        err = plug.notify_dashboard_entry(monitor.cmdr, monitor.is_beta, entry)
-        if err:
-            self.status['text'] = err
+        if monitor.cmdr:
+            err = plug.notify_dashboard_entry(monitor.cmdr, monitor.is_beta, entry)
+
+            if err:
+                self.status['text'] = err
 
     def plugin_error(self, event=None) -> None:
         """Display asynchronous error from plugin."""
-        if plug.last_error.get('msg'):
-            self.status['text'] = plug.last_error['msg']
+        if plug.last_error.msg:
+            self.status['text'] = plug.last_error.msg
             self.w.update_idletasks()
 
-    def shipyard_url(self, shipname: str) -> str:
+    def shipyard_url(self, shipname: str) -> str | None:
         """Despatch a ship URL to the configured handler."""
         if not (loadout := monitor.ship()):
             logger.warning('No ship loadout, aborting.')
@@ -645,13 +667,18 @@ class Application(object):
 
         return f'file://localhost/{file_name}'
 
-    def system_url(self, system: str) -> str:
+    def system_url(self, system: str) -> str | None:
         """Despatch a system URL to the configured handler."""
-        return plug.invoke(config.get_str('system_provider'), 'EDSM', 'system_url', monitor.system)
+        return plug.invoke(
+            config.get_str('system_provider'), 'EDSM', 'system_url', monitor.state['SystemName']
+        )
 
-    def station_url(self, station: str) -> str:
+    def station_url(self, station: str) -> str | None:
         """Despatch a station URL to the configured handler."""
-        return plug.invoke(config.get_str('station_provider'), 'eddb', 'station_url', monitor.system, monitor.station)
+        return plug.invoke(
+            config.get_str('station_provider'), 'eddb', 'station_url',
+            monitor.state['SystemName'], monitor.state['StationName']
+        )
 
     def ontop_changed(self, event=None) -> None:
         """Set main window 'on top' state as appropriate."""
@@ -660,9 +687,12 @@ class Application(object):
 
     def copy(self, event=None) -> None:
         """Copy system, and possible station, name to clipboard."""
-        if monitor.system:
+        if monitor.state['SystemName']:
             self.w.clipboard_clear()
-            self.w.clipboard_append(monitor.station and f'{monitor.system},{monitor.station}' or monitor.system)
+            self.w.clipboard_append(
+                f"{monitor.state['SystemName']},{monitor.state['StationName']}" if monitor.state['StationName']
+                else monitor.state['SystemName']
+            )
 
     def help_about(self):
         tk.messagebox.showinfo(
@@ -677,15 +707,19 @@ class Application(object):
 
     def exit_tray(self, systray: 'SysTrayIcon') -> None:
         """Tray icon is shutting down."""
-        exit_thread = threading.Thread(target=self.onexit)
-        exit_thread.setDaemon(True)
+        exit_thread = threading.Thread(
+            target=self.onexit,
+            daemon=True,
+        )
         exit_thread.start()
 
     def onexit(self, event=None) -> None:
         """Application shutdown procedure."""
         if sys.platform == 'win32':
-            shutdown_thread = threading.Thread(target=self.systray.shutdown)
-            shutdown_thread.setDaemon(True)
+            shutdown_thread = threading.Thread(
+                target=self.systray.shutdown,
+                daemon=True,
+            )
             shutdown_thread.start()
 
         config.set_shutdown()  # Signal we're in shutdown now.
@@ -762,24 +796,20 @@ class Application(object):
 
     def onenter(self, event=None) -> None:
         """Handle when our window gains focus."""
-        # TODO: This assumes that 1) transparent is at least 2, 2) there are
-        #       no new themes added after that.
-        if config.get_int('theme') > 1:
+        if config.get_int('theme') == theme.THEME_TRANSPARENT:
             self.w.attributes("-transparentcolor", '')
             self.blank_menubar.grid_remove()
             self.theme_menubar.grid(row=0, columnspan=2, sticky=tk.NSEW)
 
     def onleave(self, event=None) -> None:
         """Handle when our window loses focus."""
-        # TODO: This assumes that 1) transparent is at least 2, 2) there are
-        #       no new themes added after that.
-        if config.get_int('theme') > 1 and event.widget == self.w:
+        if config.get_int('theme') == theme.THEME_TRANSPARENT and event.widget == self.w:
             self.w.attributes("-transparentcolor", 'grey4')
             self.theme_menubar.grid_remove()
             self.blank_menubar.grid(row=0, columnspan=2, sticky=tk.NSEW)
 
     def updateurl(self, event=None):
-        openurl('https://github.com/EDDiscovery/EDD-EDMC/releases')
+        webbrowser.open('https://github.com/EDDiscovery/EDD-EDMC/releases')
 
 
 def test_logging() -> None:
@@ -915,10 +945,13 @@ sys.path: {sys.path}'''
     if not ui_scale:
         ui_scale = 100
         config.set('ui_scale', ui_scale)
+
     theme.default_ui_scale = root.tk.call('tk', 'scaling')
     logger.trace_if('tk', f'Default tk scaling = {theme.default_ui_scale}')
     theme.startup_ui_scale = ui_scale
-    root.tk.call('tk', 'scaling', theme.default_ui_scale * float(ui_scale) / 100.0)
+    if theme.default_ui_scale is not None:
+        root.tk.call('tk', 'scaling', theme.default_ui_scale * float(ui_scale) / 100.0)
+
     app = Application(root)
 
     def messagebox_not_py3():

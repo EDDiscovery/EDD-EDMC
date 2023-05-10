@@ -10,14 +10,14 @@ Script to build to .exe and .msi package.
 import os
 import shutil
 import sys
-from distutils.core import setup
+from py2exe import freeze
 from os.path import isdir, join
 from config import (
     applongname, appname, appversion, copyright, git_shorthash_from_head
 )
 from constants import GITVERSION_FILE
 
-if sys.version_info[0:2] != (3, 10):
+if sys.version_info[0:2] != (3, 11):
     raise AssertionError(f'Unexpected python version {sys.version}')
 
 ###########################################################################
@@ -71,6 +71,9 @@ OPTIONS = {
         'dist_dir': dist_dir,
         'optimize': 2,
         'packages': [
+            'asyncio',  # No longer auto as of py3.10+py2exe 0.11
+            'multiprocessing',  # No longer auto as of py3.10+py2exe 0.11
+            'pkg_resources._vendor.platformdirs',  # Necessary 2023-01-17
             'sqlite3',  # Included for plugins
         ],
         'includes': [
@@ -100,31 +103,27 @@ DATA_FILES = [
     ('plugins', PLUGINS),
 ]
 
-setup(
-    name=applongname,
-    version=appversion_str,
+freeze(
+    version_info={
+        'description': 'Conversion of EDMC to use EDDiscovery harness',
+        'company_name': 'EDCD',  # Used by WinSparkle
+        'product_name': appname,  # Used by WinSparkle
+        'version': base_appversion,
+        'product_version': appversion_str,
+        'copyright': copyright,
+        'language': 'English (United States)',
+    },
     windows=[
         {
             'dest_base': WIN,
             'script': APP,
-            'icon_resources': [(0, ICONAME)],
-            'company_name': 'EDDiscovery',
-            'product_name': appname,
-            'version': base_appversion,
-            'product_version': appversion_str,
-            'copyright': copyright,
-            #'other_resources': [(24, 1, open(f'{appcmdname}.manifest').read())],
+            'icon_resources': [(0, ICONAME)]
         }
     ],
     console=[
         {
             'dest_base': CMD,
-            'script': APP,
-            'company_name': 'EDDiscovery',
-            'product_name': appname,
-            'version': base_appversion,
-            'product_version': appversion_str,
-            'copyright': copyright,
+            'script': APP
         }
     ],
     data_files=DATA_FILES,
