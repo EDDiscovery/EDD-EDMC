@@ -209,7 +209,7 @@ namespace EDMCHarness
             Write(filetoadd, f);
         }
 
-        public void EDDNewJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
+        public void EDDNewUnfilteredJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
         {
             if (!je.stored || je.cmdrname != lastcmdr)       // if not stored, or not the same commander as the one at last refresh
             {
