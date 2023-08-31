@@ -11,7 +11,7 @@
     <OutputPath>.</OutputPath>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <InterpreterId>Global|PythonCore|3.7</InterpreterId>
+    <InterpreterId>Global|PythonCore|3.9</InterpreterId>
     <IsWindowsApplication>False</IsWindowsApplication>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
@@ -22,11 +22,17 @@
   <ItemGroup>
     <Content Include="dist\EDDEDMC.ico" />
     <Content Include="EDDEDMC.ico" />
+    <Content Include="L10n\en.template" />
+    <Content Include="L10n\uk.strings" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="companion.py" />
     <Compile Include="config.py" />
+    <Compile Include="constants.py" />
+    <Compile Include="dashboard.py" />
     <Compile Include="eddedmc.py" />
+    <Compile Include="EDMCLogging.py" />
+    <Compile Include="edmc_data.py" />
+    <Compile Include="findmypythonlocation.py" />
     <Compile Include="l10n.py" />
     <Compile Include="monitor.py" />
     <Compile Include="myNotebook.py" />
@@ -34,13 +40,16 @@
     <Compile Include="prefs.py" />
     <Compile Include="setup.py" />
     <Compile Include="theme.py" />
+    <Compile Include="timeout_session.py" />
     <Compile Include="ttkHyperlinkLabel.py" />
+    <Compile Include="util_ships.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="dist" />
+    <Folder Include="L10n\" />
   </ItemGroup>
   <ItemGroup>
-    <InterpreterReference Include="Global|PythonCore|3.7" />
+    <InterpreterReference Include="Global|PythonCore|3.9" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
 </Project>

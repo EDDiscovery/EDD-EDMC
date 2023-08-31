@@ -43,7 +43,7 @@ namespace EDMCHarness
             System.Diagnostics.Debug.WriteLine("Init func " + vstr + " " + dllfolderp);
 
             string[] vopts = vstr.Split(';');
-            int jv = vopts.ContainsIn("JOURNALVERSION=2");
+            int jv = vopts.ContainsIn("JOURNALVERSION=");
             if (jv == -1 || vopts[jv].Substring(15).InvariantParseInt(0) < 2)       // check journal version exists and is at 2 mininum
                 return "!PY Harness requires a more recent host program";
 
@@ -209,7 +209,7 @@ namespace EDMCHarness
             Write(filetoadd, f);
         }
 
-        public void EDDNewJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
+        public void EDDNewUnfilteredJournalEntry(EDDDLLInterfaces.EDDDLLIF.JournalEntry je)
         {
             if (!je.stored || je.cmdrname != lastcmdr)       // if not stored, or not the same commander as the one at last refresh
             {
